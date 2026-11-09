@@ -1,0 +1,5 @@
+# La app funciona solo con la biblioteca estándar de Python 3.10+.
+# Opcional: resumen con Claude
+anthropic
+# Opcional: generar Apuntes.exe
+pyinstaller

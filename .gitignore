@@ -1,0 +1,16 @@
+# Datos personales de cada usuario (nunca al repositorio)
+config.json
+notas/
+exportados/
+_papelera/
+
+# Ejecutable: se publica en GitHub Releases, no en el repositorio
+*.exe
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+.venv/
