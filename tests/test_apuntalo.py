@@ -173,6 +173,91 @@ class TestExportar(unittest.TestCase):
         self.assertIn(f'cx="{exportar.ANCHO_UTIL_EMU}"', doc)  # imagen ancha: se ajusta a la página
         self.assertIn('Target="media/imagen1.png"', rels)
 
+    def _nota_con_foto(self, tmp):
+        from apuntalo import portapapeles
+        Path(tmp, "foto.png").write_bytes(portapapeles.dib_a_png(dib_de_prueba(40, 20)))
+        return dict(self.nota(), cuerpo=self.MD + "![foto](<foto.png>)\n", carpeta=tmp)
+
+    def test_odt_valido(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destino = Path(tmp) / "a.odt"
+            exportar.a_odt([self._nota_con_foto(tmp), self.nota()], destino, "Física")
+            with zipfile.ZipFile(destino) as z:
+                self.assertEqual(z.namelist()[0], "mimetype")
+                self.assertEqual(z.getinfo("mimetype").compress_type, zipfile.ZIP_STORED)
+                for nombre in z.namelist():
+                    if nombre.endswith(".xml"):
+                        xml.dom.minidom.parseString(z.read(nombre))
+                self.assertIn("Pictures/imagen1.png", z.namelist())
+                doc = z.read("content.xml").decode("utf-8")
+        self.assertIn('text:style-name="Tb">negrita', doc)
+        self.assertIn('text:style-name="Salto"', doc)   # salto de página entre apuntes
+
+    def test_html_md_y_txt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            nota = self._nota_con_foto(tmp)
+            h = exportar.a_html_archivo([nota], Path(tmp) / "a.html", "Física").read_text(encoding="utf-8")
+            self.assertIn("data:image/png;base64,", h)       # imagen dentro del archivo
+            Path(tmp, "sal").mkdir()
+            md = exportar.a_md([nota], Path(tmp, "sal", "a.md"), "F")
+            texto = md.read_text(encoding="utf-8")
+            self.assertTrue(texto.startswith("# Clase & <1>\n"))
+            self.assertIn("## Título", texto)                 # los títulos bajan un nivel
+            self.assertIn("](<a_archivos/foto.png>)", texto)
+            self.assertTrue(Path(tmp, "sal", "a_archivos", "foto.png").is_file())
+            txt = exportar.a_txt([nota], Path(tmp) / "a.txt", "F").read_text(encoding="utf-8")
+            self.assertIn("negrita", txt)
+            self.assertNotIn("**", txt)
+            self.assertIn("[x] hecha", txt)
+
+    def test_catalogo_de_formatos(self):
+        self.assertEqual(set(exportar.FORMATOS), {"pdf", "docx", "odt", "html", "md", "txt"})
+
+
+class TestImportar(unittest.TestCase):
+    MD = "# Tema\nTexto con **negrita** y *cursiva*.\n- uno\n- dos\n> cita\n"
+
+    def nota(self, tmp):
+        from apuntalo import portapapeles
+        Path(tmp, "foto.png").write_bytes(portapapeles.dib_a_png(dib_de_prueba(30, 10)))
+        return {"titulo": "Mi clase", "cuerpo": self.MD + "![foto](<foto.png>)\n", "fecha": "", "asignatura": "",
+                "etiquetas": [], "carpeta": tmp}
+
+    def comprobar(self, datos):
+        from apuntalo import importar
+        self.assertEqual(datos["titulo"], "Mi clase")
+        self.assertIn("**negrita**", datos["cuerpo"])
+        self.assertIn("*cursiva*", datos["cuerpo"])
+        self.assertIn("- uno", datos["cuerpo"])
+        self.assertIn("Tema", datos["cuerpo"])
+        self.assertEqual(len(datos["imagenes"]), 1)
+        self.assertTrue(datos["imagenes"][0][1].startswith(b"\x89PNG"))
+        self.assertIn("{{imagen:0}}", datos["cuerpo"])
+        self.assertTrue(importar.FORMATOS)
+
+    def test_de_ida_y_vuelta(self):
+        from apuntalo import importar
+        for formato in ("docx", "odt", "html", "md"):
+            with self.subTest(formato=formato), tempfile.TemporaryDirectory() as tmp:
+                destino = Path(tmp) / f"x.{formato}"
+                exportar.exportar_como(formato, [self.nota(tmp)], destino, "Mi clase")
+                Path(tmp, "foto.png").unlink()      # la imagen sale del archivo (en .md, de x_archivos)
+                self.comprobar(importar.importar(destino))
+
+    def test_txt_y_formato_desconocido(self):
+        from apuntalo import importar
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "a.txt").write_bytes("Línea ñ\r\nOtra".encode("cp1252"))
+            datos = importar.importar(Path(tmp, "a.txt"))
+            self.assertEqual(datos["titulo"], "a")
+            self.assertIn("Línea ñ\nOtra", datos["cuerpo"])
+            with self.assertRaises(ValueError):
+                importar.importar(Path(tmp, "a.xyz"))
+
+
+def tk_error():
+    return ap.tk.TclError
+
 
 class TestVentana(TemporalMixin, unittest.TestCase):
     """Prueba de humo de la interfaz (se salta si no hay pantalla)."""
@@ -224,12 +309,52 @@ class TestVentana(TemporalMixin, unittest.TestCase):
         self.assertRegex(texto, r"Texto antes\n!\[imagen [^\]]+\]\(<_adjuntos/imagen [^>]+\.png>\)\n")
         self.assertEqual(len(list(ap.ADJUNTOS.glob("*.png"))), 1)
         self.app.resaltar()
-        self.assertEqual(len(self.app.texto.dump("1.0", "end", image=True)), 1)   # vista previa
+        t = self.app.texto
+        self.assertEqual(len(t.dump("1.0", "end", image=True)), 1)   # vista previa
+        # El enlace queda oculto: solo se ve la imagen
+        ini, fin = t.tag_ranges("oculto")
+        self.assertRegex(t.get(ini, fin), r"^!\[imagen [^\]]+\]\(<_adjuntos/[^>]+>\)$")
         self.app.guardar()
-        self.assertNotIn("pyimage", (ap.NOTAS / "Con imagen.md").read_text(encoding="utf-8"))
+        guardado = (ap.NOTAS / "Con imagen.md").read_text(encoding="utf-8")
+        self.assertNotIn("pyimage", guardado)
+        self.assertIn("](<_adjuntos/imagen ", guardado)   # el enlace sí se guarda
+        # Retroceso justo detrás de la imagen la borra entera (imagen + enlace)
+        t.mark_set("insert", "2.end")
+        self.assertEqual(self.app._borrar_imagen(adelante=False), "break")
+        self.assertEqual(t.dump("1.0", "end", image=True), [])
+        self.assertNotIn("_adjuntos", t.get("1.0", "end"))
+        self.assertTrue(t.get("1.0", "end-1c").startswith("Texto antes"))
         # Con texto en el portapapeles, Ctrl+V pega texto normal
         with mock.patch.object(portapapeles, "hay_texto", return_value=True):
             self.assertIsNone(self.app.pegar())
+
+    def test_ventana_exportar_e_importar(self):
+        from unittest import mock
+        with mock.patch.object(ap.simpledialog, "askstring", return_value="Clase 3"):
+            self.app.nueva()
+        self.app.texto.insert("end", "Hola **mundo**\n")
+        self.app.guardar()
+        v = self.app.menu_exportar()
+        textos = []
+        pendientes = [v]
+        while pendientes:
+            w = pendientes.pop()
+            pendientes += w.winfo_children()
+            try:
+                textos.append(w.cget("text"))
+            except tk_error():
+                pass
+        for esperado in ("Guardar como", "Guardar en", "PDF (.pdf)", "Word (.docx)", "Página web (.html)",
+                         "Markdown (.md)", "Texto sin formato (.txt)", "OpenDocument (.odt)"):
+            self.assertIn(esperado, textos)
+        v.destroy()
+        (ap.BASE / "fuera").mkdir()
+        destino = self.app.exportar("nota", "docx", ap.BASE / "fuera" / "x.docx")
+        self.assertTrue(destino.is_file())
+        hechas = self.app.importar_archivos([destino])
+        self.assertEqual(len(hechas), 1)
+        self.assertIn("**mundo**", self.app.texto.get("1.0", "end"))
+        self.assertEqual(self.app.titulo.get(), "Clase 3")
 
     def test_tamano_de_letra(self):
         self.app.cambiar_letra(+3)

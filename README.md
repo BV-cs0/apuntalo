@@ -16,8 +16,14 @@
   - **ChatGPT**, gratis y sin claves: la app copia el texto y abre chatgpt.com; pegas, copias la respuesta y la app crea el apunte.
   - **Google Gemini**, con una clave gratuita de [Google AI Studio](https://aistudio.google.com/apikey). En el plan gratuito, Google puede usar los textos para mejorar sus productos.
   - **Claude** (Anthropic), con una clave de pago de [console.anthropic.com](https://console.anthropic.com). Cuesta unos céntimos por clase.
-- **📤 Exportar a PDF y Word**: un apunte, una asignatura entera o todo, con títulos, negritas, listas, asignatura y fecha.
-- **🖼 Imágenes con Ctrl+V**: haz un recorte con Win+Shift+S (o copia una imagen) y pégalo en el apunte. Se ve dentro del texto y sale también en el PDF y en el Word.
+- **📤 Exportar**: un apunte, una asignatura entera o todo. Eliges el formato (*Guardar como*) y la carpeta (*Guardar en*):
+  - **PDF**, para imprimir o enviar.
+  - **Word (.docx)** y **OpenDocument (.odt)**, para seguir editando en Word, Google Docs o LibreOffice.
+  - **Página web (.html)**, que se abre en cualquier navegador con las imágenes dentro.
+  - **Markdown (.md)**, para Obsidian, Notion o GitHub.
+  - **Texto sin formato (.txt)**.
+- **📥 Importar**: trae tus apuntes de Word (.docx), LibreOffice (.odt), páginas web (.html), Markdown (.md) o texto (.txt) para seguir editándolos aquí. Conserva títulos, negritas, cursivas, listas, tablas e imágenes.
+- **🖼 Imágenes con Ctrl+V**: haz un recorte con Win+Shift+S (o copia una imagen) y pégalo en el apunte. En el editor se ve solo la imagen, y sale también al exportar. Para quitarla, pulsa Retroceso justo detrás de ella.
 - **⏱ Marcas de tiempo, ▶ cronómetro y 📎 adjuntar capturas o PDF.**
 
 ## Instalar
@@ -60,7 +66,8 @@ Descarga el código y haz doble clic en **`Abrir apuntes.bat`**. Los apuntes se 
 | Ctrl+F | Buscar |
 | Ctrl+V | Pegar texto o **imágenes**: un recorte (Win+Shift+S), una imagen copiada del navegador o archivos copiados en el Explorador. Se guardan en los adjuntos del apunte y se ven dentro del texto |
 | Ctrl+T | Insertar la hora, o el minuto del vídeo si el cronómetro está en marcha |
-| Ctrl+E | Exportar a PDF o Word |
+| Ctrl+E | Exportar (PDF, Word, OpenDocument, web, Markdown o texto) |
+| Ctrl+I | Importar apuntes de otros programas |
 | F8 | Empezar o parar los apuntes automáticos |
 | F9 / F10 | Fijar encima / Modo compacto |
 | Ctrl+Alt+A | Mostrar u ocultar la ventana desde cualquier programa |
@@ -86,7 +93,9 @@ Tus apuntes se quedan en tu PC. Solo salen de él si usas **Resumir con IA**: co
 | Archivo | Qué hace |
 |---|---|
 | `apuntalo/app.py` | La aplicación (Python + tkinter, solo con la biblioteca estándar). |
-| `apuntalo/exportar.py` | Exportar a DOCX (generado a mano) y a PDF (imprimiendo HTML con Microsoft Edge). |
+| `apuntalo/exportar.py` | Exportar a PDF (imprimiendo HTML con Microsoft Edge), DOCX y ODT (generados a mano), HTML, Markdown y texto. |
+| `apuntalo/importar.py` | Importar DOCX, ODT, HTML, Markdown y texto, convirtiéndolos a Markdown. |
+| `apuntalo/portapapeles.py` | Leer imágenes y archivos copiados (Ctrl+V) sin librerías externas. |
 | `apuntalo/captura.ps1` | Ayudante de PowerShell para el modo automático: lee los Subtítulos en directo y hace capturas con OCR. |
 | `apuntes.pyw` | Lanzador para abrir la app desde el código con doble clic. |
 | `crear_exe.bat` | Genera `Apuntalo.exe` con PyInstaller. |
@@ -117,7 +126,9 @@ Para generar el `.exe`: `py -3 -m pip install -r requirements.txt` y después ej
 - [ ] **pip:** `py -m pip install apuntalo` y después `py -m apuntalo`. Se abre y guarda los apuntes en `Documentos\Apuntalo`.
 - [ ] **Organizar:** crea la carpeta `Matemáticas/Tema 1` y un apunte con la plantilla *Clase / estudio*. Ponle etiquetas y búscalo con Ctrl+F.
 - [ ] **Formato:** escribe `# Título`, `**negrita**` y `- [x] tarea` y comprueba que se colorean. Prueba Ctrl + y Ctrl - para cambiar el tamaño de la letra.
-- [ ] **Imágenes:** haz un recorte con Win+Shift+S y pulsa Ctrl+V en un apunte. La imagen aparece dentro del texto. Exporta a Word y comprueba que sale. Copia texto normal y comprueba que Ctrl+V sigue pegando texto.
+- [ ] **Imágenes:** haz un recorte con Win+Shift+S y pulsa Ctrl+V en un apunte. Se ve solo la imagen, sin el texto `![...]`. Pulsa Retroceso detrás de ella y desaparece entera. Copia texto normal y comprueba que Ctrl+V sigue pegando texto.
+- [ ] **Exportar a todo:** Ctrl+E, cambia *Guardar en* con los botones (Escritorio, Documentos...) y exporta el mismo apunte en los seis formatos. Abre el `.odt` en LibreOffice y el `.html` en el móvil.
+- [ ] **Importar:** Ctrl+I y elige un Word tuyo de verdad (con títulos, listas e imágenes). Se crea un apunte con la etiqueta `importado` que puedes editar.
 - [ ] **Autoguardado:** escribe algo, espera 15 segundos y cierra la app desde el Administrador de tareas. Al volver a abrirla, el texto sigue ahí.
 - [ ] **Sobre un vídeo:** pon un vídeo de YouTube y pulsa F9 (fijar) y F10 (compacto). Ajusta la transparencia y prueba Ctrl+Alt+A desde el navegador.
 - [ ] **Automático con audio:** F8, marca solo 🎧 y pon un vídeo con voz. Comprueba que el texto aparece en párrafos con su `[hh:mm:ss]` y sin repeticiones.

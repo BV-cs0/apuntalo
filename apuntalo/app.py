@@ -14,22 +14,27 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import exportar, portapapeles
+from . import exportar, importar, portapapeles
 
 PAQUETE = Path(__file__).resolve().parent
 
 
-def carpeta_documentos():
-    """La carpeta Documentos real del usuario (puede estar en OneDrive)."""
+def carpeta_windows(csidl, nombre):
+    """Una carpeta especial de Windows tal como la tiene el usuario (puede estar en OneDrive)."""
     if sys.platform == "win32":
         try:
             buf = ctypes.create_unicode_buffer(260)
-            if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) == 0:  # CSIDL_PERSONAL
+            if ctypes.windll.shell32.SHGetFolderPathW(None, csidl, None, 0, buf) == 0:
                 return Path(buf.value)
         except Exception:
             pass
-    docs = Path.home() / "Documents"
-    return docs if docs.is_dir() else Path.home()
+    ruta = Path.home() / nombre
+    return ruta if ruta.is_dir() else Path.home()
+
+
+def carpeta_documentos():
+    """La carpeta Documentos real del usuario."""
+    return carpeta_windows(5, "Documents")   # CSIDL_PERSONAL
 
 
 def carpeta_datos():
@@ -273,6 +278,7 @@ class App(tk.Tk):
         self.btn_fijar.pack(side="right")
         ttk.Button(barra, text="🗗 Compacto", command=self.alternar_compacto).pack(side="right", padx=4)
         ttk.Button(barra, text="📤 Exportar", command=self.menu_exportar).pack(side="right")
+        ttk.Button(barra, text="📥 Importar", command=self.importar).pack(side="right", padx=(0, 4))
         ttk.Button(clase, text="✨ Resumir con IA", command=self.resumir_ia).pack(side="right")
         self.btn_auto = ttk.Button(clase, text="🤖 Apuntes automáticos", command=self.alternar_auto)
         self.btn_auto.pack(side="right", padx=4)
@@ -351,6 +357,9 @@ class App(tk.Tk):
         self.texto.pack(fill="both", expand=True)
         self.texto.bind("<<Modified>>", self._modificado)
         self.texto.bind("<<Paste>>", self.pegar)  # Ctrl+V / Mayús+Insert: imágenes y archivos
+        self.texto.bind("<Control-i>", lambda e: self.importar() or "break")   # si no, Tk mete un tabulador
+        self.texto.bind("<BackSpace>", lambda e: self._borrar_imagen(adelante=False))
+        self.texto.bind("<Delete>", lambda e: self._borrar_imagen(adelante=True))
         self.estado = ttk.Label(der, text="", foreground="gray")
         self.estado.pack(side="bottom", anchor="w", before=marco)  # siempre visible abajo
         panel.add(der, weight=3)
@@ -370,6 +379,7 @@ class App(tk.Tk):
         self.bind_all("<Control-0>", lambda e: self.cambiar_letra(0))
         self.texto.bind("<Control-MouseWheel>", lambda e: (self.cambiar_letra(1 if e.delta > 0 else -1), "break")[1])
         self.bind_all("<Control-e>", lambda e: self.menu_exportar())
+        self.bind_all("<Control-i>", lambda e: self.importar() or "break")
         self._habilitar_editor(False)
 
     def _habilitar_editor(self, si):
@@ -402,6 +412,7 @@ class App(tk.Tk):
         t.tag_configure("tiempo", foreground="#2F5496")
         t.tag_configure("hecha", foreground="#888888", overstrike=True)
         t.tag_configure("vineta", foreground="#2F5496")
+        t.tag_configure("oculto", elide=True)   # enlaces de imágenes: se ve la imagen, no el texto
 
     PATRONES = [
         ("negrita", re.compile(r"\*\*[^*\n]+\*\*")),
@@ -680,20 +691,24 @@ class App(tk.Tk):
 
     # ---------- vista previa de imágenes dentro del editor ----------
     RE_IMAGEN = re.compile(r"!\[[^\]]*\]\(<?([^)>]+)>?\)")
-    ANCHO_MINIATURA = 420
 
     def _miniatura(self, ruta):
+        """La imagen reducida (si hace falta) al ancho del editor."""
         if not hasattr(self, "_miniaturas"):
             self._miniaturas = {}
-        clave = (str(ruta), ruta.stat().st_mtime)
+        ancho_editor = self.texto.winfo_width()
+        maximo = ancho_editor - 60 if ancho_editor > 300 else 800
+        clave = (str(ruta), ruta.stat().st_mtime, maximo)
         if clave not in self._miniaturas:
             img = tk.PhotoImage(file=str(ruta))
-            factor = max(1, -(-img.width() // self.ANCHO_MINIATURA))
+            factor = max(1, -(-img.width() // maximo))
             self._miniaturas[clave] = img.subsample(factor) if factor > 1 else img
         return self._miniaturas[clave]
 
     def mostrar_imagenes(self, lineas=None):
-        """Muestra debajo de cada enlace ![..](..) a un PNG/GIF la imagen en pequeño (solo en pantalla)."""
+        """En el editor, cambia cada enlace ![..](..) a un PNG/GIF por la propia imagen.
+
+        El enlace sigue en el texto (se guarda en el .md y sirve para exportar), pero queda oculto."""
         t = self.texto
         if self.actual is None:
             return
@@ -706,21 +721,45 @@ class App(tk.Tk):
                 continue
             ruta = (self.actual.parent / m.group(1)).resolve()
             if ruta.suffix.lower() in (".png", ".gif") and ruta.is_file():
-                deseadas.append((n, str(ruta)))
+                deseadas.append((n, str(ruta), m.start(), m.end()))
         nombres = getattr(self, "_img_ruta", {})
         actuales = [(int(idx.split(".")[0]), nombres.get(nombre)) for _, nombre, idx in t.dump("1.0", "end", image=True)]
-        if actuales == deseadas:
+        if actuales == [(n, r) for n, r, _, _ in deseadas]:
             return
         self._img_ruta = {}
+        t.tag_remove("oculto", "1.0", "end")
         for _, nombre, _ in t.dump("1.0", "end", image=True):
             t.delete(nombre)
-        for n, ruta in deseadas:
+        for n, ruta, ini, fin in deseadas:
             try:
                 img = self._miniatura(Path(ruta))
             except (tk.TclError, OSError):
                 continue
-            nombre = t.image_create(f"{n}.end", image=img, padx=8, pady=6)
+            nombre = t.image_create(f"{n}.{ini}", image=img, padx=4, pady=6)
             self._img_ruta[nombre] = ruta
+            t.tag_add("oculto", f"{n}.{ini + 1}", f"{n}.{fin + 1}")   # el enlace va justo detrás de la imagen
+        t.edit_modified(False)  # mostrar imágenes no es un cambio del apunte
+
+    def _borrar_imagen(self, adelante):
+        """Retroceso/Supr junto a una imagen: borra la imagen y su enlace oculto de una vez."""
+        t = self.texto
+        if t.tag_ranges("sel"):
+            return None
+        idx = t.index("insert" if adelante else "insert-1c")
+        es_imagen = bool(t.dump(idx, f"{idx}+1c", image=True))
+        if not es_imagen and "oculto" not in t.tag_names(idx):
+            return None
+        linea = idx.split(".")[0]
+        for _, nombre, inicio in t.dump(f"{linea}.0", f"{linea}.end", image=True):
+            rango = t.tag_nextrange("oculto", inicio)
+            fin = rango[1] if rango else f"{inicio}+1c"
+            if t.compare(inicio, "<=", idx) and t.compare(idx, "<", fin):
+                t.delete(inicio, fin)
+                if not t.get(f"{linea}.0", f"{linea}.end").strip():
+                    t.delete(f"{linea}.0", f"{linea}.0+1c")   # no dejar una línea vacía
+                self.marcar_cambio()
+                return "break"
+        return None
 
     # ---------- apuntes automáticos (audio + pantalla) ----------
     def alternar_auto(self):
@@ -1182,58 +1221,196 @@ class App(tk.Tk):
             return self.actual.parent
         return None
 
+    def _titulo_exportacion(self, que):
+        if que == "nota":
+            return self.titulo.get().strip() or "Apunte"
+        if que == "carpeta" and self._carpeta_elegida():
+            return self._carpeta_elegida().relative_to(NOTAS).as_posix()
+        return "Apuntes"
+
     def menu_exportar(self):
+        """Ventana «Exportar»: qué exportar, en qué formato (Guardar como) y en qué carpeta (Guardar en)."""
         self.guardar(silencioso=True)
-        m = tk.Menu(self, tearoff=0)
+        opciones = []
         if self.actual:
-            m.add_command(label="Este apunte → PDF", command=lambda: self.exportar("nota", "pdf"))
-            m.add_command(label="Este apunte → Word (.docx)", command=lambda: self.exportar("nota", "docx"))
-            m.add_separator()
+            opciones.append(("nota", f"Este apunte: «{self.titulo.get().strip()}»"))
         carpeta = self._carpeta_elegida()
         if carpeta:
-            nombre = carpeta.relative_to(NOTAS).as_posix()
-            m.add_command(label=f"Carpeta «{nombre}» → PDF", command=lambda: self.exportar("carpeta", "pdf"))
-            m.add_command(label=f"Carpeta «{nombre}» → Word (.docx)", command=lambda: self.exportar("carpeta", "docx"))
-            m.add_separator()
-        m.add_command(label="Todos los apuntes → PDF", command=lambda: self.exportar("todo", "pdf"))
-        m.add_command(label="Todos los apuntes → Word (.docx)", command=lambda: self.exportar("todo", "docx"))
-        m.tk_popup(self.winfo_pointerx(), self.winfo_pointery())
+            opciones.append(("carpeta", f"Toda la carpeta «{carpeta.relative_to(NOTAS).as_posix()}»"))
+        opciones.append(("todo", "Todos los apuntes"))
 
-    def exportar(self, que, formato):
+        v = self._ventana_exportar = tk.Toplevel(self)
+        v.title("Exportar apuntes")
+        v.transient(self)
+        v.resizable(False, False)
+        if self.encima.get():
+            v.attributes("-topmost", True)
+        m = ttk.Frame(v, padding=14)
+        m.pack(fill="both", expand=True)
+        negrita = ("Segoe UI", 10, "bold")
+
+        que = tk.StringVar(value=opciones[0][0])
+        guardado = self.cfg.get("exportar_formato", "pdf")
+        formato = tk.StringVar(value=guardado if guardado in exportar.FORMATOS else "pdf")
+        nombre = tk.StringVar(value=slug(self._titulo_exportacion(que.get()).replace("/", " - ")))
+        carpeta_dest = tk.StringVar(value=self.cfg.get("exportar_carpeta") or str(BASE / "exportados"))
+        abrir = tk.BooleanVar(value=self.cfg.get("exportar_abrir", True))
+        ext = tk.StringVar()
+
+        def al_cambiar_que():
+            nombre.set(slug(self._titulo_exportacion(que.get()).replace("/", " - ")))
+
+        def al_cambiar_formato():
+            ext.set(exportar.FORMATOS[formato.get()][1])
+
+        al_cambiar_formato()
+        fila = 0
+        ttk.Label(m, text="Qué exportar", font=negrita).grid(row=fila, column=0, columnspan=3, sticky="w")
+        for clave, texto in opciones:
+            fila += 1
+            ttk.Radiobutton(m, text=texto, variable=que, value=clave, command=al_cambiar_que).grid(
+                row=fila, column=0, columnspan=3, sticky="w", padx=(12, 0))
+        fila += 1
+        ttk.Label(m, text="Guardar como", font=negrita).grid(row=fila, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        for clave, (nom, extension, para_que, _) in exportar.FORMATOS.items():
+            fila += 1
+            ttk.Radiobutton(m, text=f"{nom} ({extension})", variable=formato, value=clave,
+                            command=al_cambiar_formato).grid(row=fila, column=0, sticky="w", padx=(12, 8))
+            ttk.Label(m, text=para_que, foreground="#666666").grid(row=fila, column=1, columnspan=2, sticky="w")
+        fila += 1
+        ttk.Label(m, text="Nombre del archivo", font=negrita).grid(row=fila, column=0, sticky="w", pady=(12, 0))
+        fila += 1
+        caja = ttk.Frame(m)
+        caja.grid(row=fila, column=0, columnspan=3, sticky="we", padx=(12, 0))
+        ttk.Entry(caja, textvariable=nombre, width=50).pack(side="left", fill="x", expand=True)
+        ttk.Label(caja, textvariable=ext, width=6).pack(side="left", padx=(2, 0))
+        fila += 1
+        ttk.Label(m, text="Guardar en", font=negrita).grid(row=fila, column=0, sticky="w", pady=(12, 0))
+        fila += 1
+        caja = ttk.Frame(m)
+        caja.grid(row=fila, column=0, columnspan=3, sticky="we", padx=(12, 0))
+        ttk.Entry(caja, textvariable=carpeta_dest, width=50).pack(side="left", fill="x", expand=True)
+
+        def examinar():
+            elegida = filedialog.askdirectory(parent=v, title="Guardar en...",
+                                              initialdir=carpeta_dest.get() if Path(carpeta_dest.get()).is_dir() else BASE)
+            if elegida:
+                carpeta_dest.set(str(Path(elegida)))
+
+        ttk.Button(caja, text="📁 Examinar...", command=examinar).pack(side="left", padx=(4, 0))
+        fila += 1
+        accesos = ttk.Frame(m)
+        accesos.grid(row=fila, column=0, columnspan=3, sticky="w", padx=(12, 0), pady=(4, 0))
+        for texto, ruta in (("Exportados", BASE / "exportados"), ("Escritorio", carpeta_windows(0x10, "Desktop")),
+                            ("Documentos", carpeta_documentos()), ("Descargas", Path.home() / "Downloads")):
+            ttk.Button(accesos, text=texto, command=lambda r=ruta: carpeta_dest.set(str(r))).pack(side="left", padx=(0, 4))
+        fila += 1
+        ttk.Checkbutton(m, text="Abrir el archivo al terminar", variable=abrir).grid(
+            row=fila, column=0, columnspan=3, sticky="w", pady=(12, 0))
+
+        def aceptar(_e=None):
+            nom = slug(nombre.get().strip())
+            if not nom:
+                messagebox.showinfo("Exportar", "Escribe un nombre para el archivo.", parent=v)
+                return
+            carpeta_final = Path(carpeta_dest.get().strip() or BASE / "exportados")
+            try:
+                carpeta_final.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                messagebox.showerror("Exportar", f"No se puede usar esa carpeta:\n{e}", parent=v)
+                return
+            destino = carpeta_final / (nom + ext.get())
+            if destino.exists() and not messagebox.askyesno(
+                    "Exportar", f"Ya existe «{destino.name}» en esa carpeta.\n¿Quieres reemplazarlo?", parent=v):
+                return
+            self.cfg.update({"exportar_formato": formato.get(), "exportar_abrir": abrir.get(),
+                             "exportar_carpeta": str(carpeta_final)})
+            guardar_config(self.cfg)
+            v.destroy()
+            self.exportar(que.get(), formato.get(), destino, abrir=abrir.get())
+
+        fila += 1
+        botones = ttk.Frame(m)
+        botones.grid(row=fila, column=0, columnspan=3, sticky="e", pady=(14, 0))
+        ttk.Button(botones, text="Cancelar", command=v.destroy).pack(side="right")
+        ttk.Button(botones, text="📤 Exportar", command=aceptar).pack(side="right", padx=(0, 6))
+        v.bind("<Return>", aceptar)
+        v.bind("<Escape>", lambda e: v.destroy())
+        v.update_idletasks()
+        x = self.winfo_rootx() + max(0, (self.winfo_width() - v.winfo_reqwidth()) // 2)
+        y = self.winfo_rooty() + max(0, (self.winfo_height() - v.winfo_reqheight()) // 3)
+        v.geometry(f"+{x}+{y}")
+        v.grab_set()
+        v.focus_set()
+        return v
+
+    def exportar(self, que, formato, destino, abrir=False):
         if que == "nota":
-            rutas, titulo = [self.actual], self.titulo.get()
+            rutas = [self.actual]
         else:
             raiz = self._carpeta_elegida() if que == "carpeta" else NOTAS
             rutas = [p for p in raiz.rglob("*.md") if ADJUNTOS not in p.parents]
-            titulo = raiz.relative_to(NOTAS).as_posix() if que == "carpeta" else "Apuntes"
+        titulo = self._titulo_exportacion(que)
         notas = sorted((self._datos_nota(r) for r in rutas), key=lambda n: (n["asignatura"], n["fecha"], n["titulo"]))
         if not notas:
             messagebox.showinfo("Exportar", "No hay apuntes que exportar.")
-            return
+            return None
         if que == "nota" and notas[0]["asignatura"]:
             cab = f"{notas[0]['asignatura']}  ·  {notas[0]['fecha']}"
         else:
             cab = titulo
-        salida = BASE / "exportados"
-        salida.mkdir(exist_ok=True)
-        destino = filedialog.asksaveasfilename(
-            parent=self, initialdir=salida, initialfile=slug(titulo.replace("/", " - ")) + "." + formato,
-            defaultextension="." + formato,
-            filetypes=[("PDF", "*.pdf")] if formato == "pdf" else [("Documento de Word", "*.docx")])
-        if not destino:
-            return
         self.config(cursor="watch")
         self.update()
         try:
-            (exportar.a_pdf if formato == "pdf" else exportar.a_docx)(notas, destino, cab)
+            exportar.exportar_como(formato, notas, destino, cab)
         except Exception as e:
             messagebox.showerror("Exportar", f"No se pudo exportar:\n{e}")
-            return
+            return None
         finally:
             self.config(cursor="")
         self.estado.configure(text=f"Exportado: {destino}")
-        if messagebox.askyesno("Exportar", "Exportado. ¿Abrirlo ahora?"):
+        if abrir:
             abrir_en_sistema(destino)
+        return destino
+
+    # ---------- importar ----------
+    def importar(self):
+        """Trae apuntes de Word, LibreOffice, páginas web, Markdown o texto para seguir editándolos aquí."""
+        archivos = filedialog.askopenfilenames(parent=self, title="Importar apuntes", filetypes=[
+            ("Apuntes (Word, LibreOffice, web, Markdown, texto)", "*.docx *.odt *.html *.htm *.md *.markdown *.txt"),
+            ("Word", "*.docx"), ("LibreOffice / OpenDocument", "*.odt"), ("Página web", "*.html *.htm"),
+            ("Markdown", "*.md *.markdown"), ("Texto", "*.txt")])
+        if archivos:
+            self.importar_archivos([Path(a) for a in archivos])
+
+    def importar_archivos(self, rutas):
+        self.guardar(silencioso=True)
+        carpeta = self._carpeta_elegida() or NOTAS
+        hechas, errores = [], []
+        for ruta in rutas:
+            try:
+                datos = importar.importar(ruta)
+            except Exception as e:  # noqa: BLE001 - un archivo roto no debe parar los demás
+                errores.append(f"{ruta.name}: {e}")
+                continue
+            titulo = datos["titulo"].strip() or ruta.stem
+            destino = self._ruta_libre(carpeta, titulo)
+            cuerpo = datos["cuerpo"]
+            for n, (nombre, contenido) in enumerate(datos["imagenes"]):
+                archivo = self._ruta_adjunto(nombre)
+                archivo.write_bytes(contenido)
+                rel = os.path.relpath(archivo, destino.parent).replace("\\", "/")
+                cuerpo = cuerpo.replace(f"{{{{imagen:{n}}}}}", rel)
+            escribir_nota(destino, titulo, ["importado"], datetime.now().strftime("%Y-%m-%d %H:%M"), cuerpo)
+            hechas.append(destino)
+        if hechas:
+            self.actual = None
+            self.cargar(hechas[-1])
+            self.refrescar()
+            self.estado.configure(text=f"Importados {len(hechas)} apunte(s) en «{carpeta.relative_to(BASE)}»")
+        if errores:
+            messagebox.showwarning("Importar", "No se pudieron importar:\n\n" + "\n".join(errores))
+        return hechas
 
     def cerrar(self):
         self.parar_auto()

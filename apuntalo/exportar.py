@@ -1,4 +1,6 @@
-"""Exporta apuntes Markdown a PDF (vía Microsoft Edge) y a DOCX (Word), sin librerías externas."""
+"""Exporta apuntes Markdown a PDF (vía Microsoft Edge), Word, OpenDocument, HTML, Markdown y texto,
+sin librerías externas."""
+import base64
 import html
 import re
 import shutil
@@ -94,7 +96,11 @@ def _inline_html(texto):
     return out
 
 
-def a_html(notas, titulo_doc):
+TIPOS_IMAGEN = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif"}
+
+
+def a_html(notas, titulo_doc, incrustar=False):
+    """HTML de los apuntes. Con incrustar=True las imágenes van dentro del archivo (página portable)."""
     cuerpo = []
     for n, nota in enumerate(notas):
         cuerpo.append(f'<section{" class=salto" if n else ""}><h1>{html.escape(nota["titulo"])}</h1>'
@@ -111,7 +117,11 @@ def a_html(notas, titulo_doc):
                 if src.suffix.lower() == ".pdf" or not src.exists():
                     cuerpo.append(f"<p class=adj>[Adjunto: {html.escape(b['texto'])}]</p>")
                 else:
-                    cuerpo.append(f'<p><img src="{src.as_uri()}" alt="{html.escape(b["texto"])}"></p>')
+                    url = src.as_uri()
+                    if incrustar and src.suffix.lower() in TIPOS_IMAGEN:
+                        url = f"data:{TIPOS_IMAGEN[src.suffix.lower()]};base64," + \
+                              base64.b64encode(src.read_bytes()).decode("ascii")
+                    cuerpo.append(f'<p><img src="{url}" alt="{html.escape(b["texto"])}"></p>')
             elif t in ("ul", "ol", "tarea"):
                 marca = {"ul": "•", "ol": b.get("num", "") + ".", "tarea": "☑" if b.get("hecha") else "☐"}[t]
                 cuerpo.append(f'<p class=li style="margin-left:{sangria}px"><span class=m>{marca}</span>'
@@ -367,3 +377,253 @@ def a_docx(notas, destino, titulo_doc):
         for _, ruta, datos in imagenes:
             z.writestr("word/" + ruta, datos)
     return destino
+
+
+# ---------- Página web (un solo archivo) ----------
+def a_html_archivo(notas, destino, titulo_doc):
+    destino = Path(destino)
+    destino.write_text(a_html(notas, titulo_doc, incrustar=True), encoding="utf-8")
+    return destino
+
+
+# ---------- Markdown ----------
+ENLACE = re.compile(r"(!?)\[([^\]]*)\]\(<?([^)>]*)>?\)")
+
+
+def a_md(notas, destino, titulo_doc):
+    """Un .md con todos los apuntes. Las imágenes y adjuntos se copian a «<nombre>_archivos»."""
+    destino = Path(destino)
+    carpeta_arch = destino.with_name(destino.stem + "_archivos")
+    copiados = {}
+
+    def cambiar(m, nota):
+        objetivo = m[3]
+        if re.match(r"[a-z]+:", objetivo, re.I):        # enlace web: se deja igual
+            return m[0]
+        src = (Path(nota.get("carpeta", ".")) / objetivo).resolve()
+        if not src.is_file():
+            return m[0]
+        if src not in copiados:
+            carpeta_arch.mkdir(exist_ok=True)
+            nombre, n = src.name, 1
+            while (carpeta_arch / nombre).exists():
+                n += 1
+                nombre = f"{src.stem} ({n}){src.suffix}"
+            shutil.copy2(src, carpeta_arch / nombre)
+            copiados[src] = nombre
+        return f"{m[1]}[{m[2]}](<{carpeta_arch.name}/{copiados[src]}>)"
+
+    partes = []
+    for nota in notas:
+        lineas, en_codigo = [], False
+        for linea in nota["cuerpo"].splitlines():
+            if linea.strip().startswith("```"):
+                en_codigo = not en_codigo
+            elif not en_codigo:
+                if re.match(r"#{1,5}\s", linea):
+                    linea = "#" + linea                   # el título del apunte es el «#»
+                linea = ENLACE.sub(lambda m: cambiar(m, nota), linea)
+            lineas.append(linea)
+        sub = subtitulo(nota)
+        partes.append(f"# {nota['titulo']}\n\n" + (f"*{sub}*\n\n" if sub else "") + "\n".join(lineas).strip() + "\n")
+    destino.write_text("\n---\n\n".join(partes), encoding="utf-8")
+    return destino
+
+
+# ---------- Texto sin formato ----------
+def _plano(texto):
+    return "".join(t for t, *_ in trozos(texto))
+
+
+def a_txt(notas, destino, titulo_doc):
+    salida = []
+    for n, nota in enumerate(notas):
+        if n:
+            salida += ["", "=" * 60, ""]
+        salida += [nota["titulo"].upper(), "=" * len(nota["titulo"])]
+        if sub := subtitulo(nota):
+            salida.append(sub)
+        salida.append("")
+        for b in bloques(nota["cuerpo"]):
+            t, sangria = b["tipo"], "  " * b.get("nivel", 0)
+            if t in ("h1", "h2", "h3"):
+                texto = _plano(b["texto"])
+                salida += ["", texto, ("=" if t == "h1" else "-") * len(texto)]
+            elif t == "hr":
+                salida.append("-" * 40)
+            elif t == "img":
+                salida.append(f"[Imagen: {b['texto']}]")
+            elif t == "ul":
+                salida.append(f"{sangria}• {_plano(b['texto'])}")
+            elif t == "ol":
+                salida.append(f"{sangria}{b['num']}. {_plano(b['texto'])}")
+            elif t == "tarea":
+                salida.append(f"{sangria}[{'x' if b['hecha'] else ' '}] {_plano(b['texto'])}")
+            elif t == "codigo":
+                salida += ["    " + l for l in b["texto"].split("\n")]
+            elif t == "cita":
+                salida.append("  | " + _plano(b["texto"]))
+            else:
+                salida.append(_plano(b["texto"]))
+    destino = Path(destino)
+    destino.write_text("\n".join(salida).rstrip() + "\n", encoding="utf-8")
+    return destino
+
+
+# ---------- OpenDocument (.odt, LibreOffice) ----------
+NS_ODF = ('xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+          'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" '
+          'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" '
+          'xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" '
+          'xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" '
+          'xmlns:xlink="http://www.w3.org/1999/xlink" '
+          'xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" '
+          'xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" '
+          'xmlns:dc="http://purl.org/dc/elements/1.1/" office:version="1.3"')
+ANCHO_UTIL_CM = 17.0
+
+
+def _odt_texto(t):
+    t = _x(t).replace("\t", "<text:tab/>")
+    return re.sub(r"  +", lambda m: f' <text:s text:c="{len(m[0]) - 1}"/>', t)
+
+
+def _odt_runs(texto):
+    out = ""
+    for t, b, i, c in trozos(texto):
+        estilo = "Tc" if c else {(True, True): "Tbi", (True, False): "Tb", (False, True): "Ti"}.get((b, i))
+        out += f'<text:span text:style-name="{estilo}">{_odt_texto(t)}</text:span>' if estilo else _odt_texto(t)
+    return out
+
+
+def a_odt(notas, destino, titulo_doc):
+    imagenes, cuerpo = [], []
+
+    def p(contenido, estilo="Standard"):
+        cuerpo.append(f'<text:p text:style-name="{estilo}">{contenido}</text:p>')
+
+    for n, nota in enumerate(notas):
+        p(_odt_runs(nota["titulo"]), "Salto" if n else "Titulo")
+        p(_odt_runs(subtitulo(nota)), "Subtitulo")
+        for b in bloques(nota["cuerpo"]):
+            t = b["tipo"]
+            if t in ("h1", "h2", "h3"):
+                cuerpo.append(f'<text:h text:style-name="Heading_20_{t[1]}" text:outline-level="{t[1]}">'
+                              f'{_odt_runs(b["texto"])}</text:h>')
+            elif t == "hr":
+                p("", "Raya")
+            elif t == "img":
+                src = (Path(nota.get("carpeta", ".")) / b["src"]).resolve()
+                datos = src.read_bytes() if src.is_file() else b""
+                tam = tamano_imagen(datos) if datos else None
+                if tam and all(tam):
+                    ext = "png" if datos[:4] == b"\x89PNG" else "jpg"
+                    ruta = f"Pictures/imagen{len(imagenes) + 1}.{ext}"
+                    imagenes.append((ruta, datos, "image/png" if ext == "png" else "image/jpeg"))
+                    ancho, alto = tam[0] * 2.54 / 96, tam[1] * 2.54 / 96
+                    if ancho > ANCHO_UTIL_CM:
+                        ancho, alto = ANCHO_UTIL_CM, alto * ANCHO_UTIL_CM / ancho
+                    p(f'<draw:frame draw:style-name="fr1" draw:name="Imagen {len(imagenes)}" text:anchor-type="as-char" '
+                      f'svg:width="{ancho:.3f}cm" svg:height="{alto:.3f}cm"><draw:image xlink:href="{ruta}" '
+                      'xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/></draw:frame>')
+                else:
+                    p(f'<text:span text:style-name="Ti">{_odt_texto("[Adjunto: " + b["texto"] + "]")}</text:span>')
+            elif t in ("ul", "ol", "tarea"):
+                marca = {"ul": "•", "ol": b.get("num", "") + ".", "tarea": "☑" if b.get("hecha") else "☐"}[t]
+                p(f"{_x(marca)}<text:tab/>{_odt_runs(b['texto'])}", f"Lista{min(b.get('nivel', 0), 5)}")
+            elif t == "codigo":
+                p("<text:line-break/>".join(_odt_texto(l) for l in b["texto"].split("\n")), "Codigo")
+            elif t == "cita":
+                p(_odt_runs(b["texto"]), "Cita")
+            else:
+                p(_odt_runs(b["texto"]))
+
+    listas = "".join(
+        f'<style:style style:name="Lista{k}" style:family="paragraph" style:parent-style-name="Standard">'
+        f'<style:paragraph-properties fo:margin-left="{0.6 + 0.6 * k:.1f}cm" fo:text-indent="-0.5cm" fo:margin-bottom="0.05cm">'
+        f'<style:tab-stops><style:tab-stop style:position="0cm"/></style:tab-stops></style:paragraph-properties></style:style>'
+        for k in range(6))
+    contenido = (f'<?xml version="1.0" encoding="UTF-8"?><office:document-content {NS_ODF}><office:automatic-styles>'
+                 '<style:style style:name="Salto" style:family="paragraph" style:parent-style-name="Titulo">'
+                 '<style:paragraph-properties fo:break-before="page"/></style:style>'
+                 '<style:style style:name="Tb" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style>'
+                 '<style:style style:name="Ti" style:family="text"><style:text-properties fo:font-style="italic"/></style:style>'
+                 '<style:style style:name="Tbi" style:family="text"><style:text-properties fo:font-weight="bold" fo:font-style="italic"/></style:style>'
+                 '<style:style style:name="Tc" style:family="text"><style:text-properties '
+                 'fo:font-family="Consolas" fo:background-color="#F0F0F0"/></style:style>'
+                 '<style:style style:name="fr1" style:family="graphic"><style:graphic-properties '
+                 'style:vertical-pos="top" style:vertical-rel="baseline"/></style:style>'
+                 + listas + '</office:automatic-styles><office:body><office:text>'
+                 + "".join(cuerpo) + "</office:text></office:body></office:document-content>")
+
+    def estilo(nombre, visible, texto="", parrafo="", extra=""):
+        return (f'<style:style style:name="{nombre}" style:display-name="{visible}" style:family="paragraph" '
+                f'style:parent-style-name="Standard"{extra}><style:paragraph-properties {parrafo}/>'
+                f'<style:text-properties {texto}/></style:style>')
+
+    estilos = (f'<?xml version="1.0" encoding="UTF-8"?><office:document-styles {NS_ODF}><office:styles>'
+               '<style:default-style style:family="paragraph"><style:paragraph-properties fo:margin-bottom="0.1cm" '
+               'fo:line-height="115%"/><style:text-properties fo:font-family="Calibri" '
+               'fo:font-size="11.5pt" fo:language="es" fo:country="ES"/></style:default-style>'
+               '<style:style style:name="Standard" style:family="paragraph" style:class="text"/>'
+               + estilo("Titulo", "Título", 'fo:font-size="20pt" fo:font-weight="bold" fo:color="#1F3864"', 'fo:margin-bottom="0cm"')
+               + estilo("Subtitulo", "Subtítulo", 'fo:font-size="10pt" fo:color="#666666"', 'fo:margin-bottom="0.4cm"')
+               + estilo("Heading_20_1", "Heading 1", 'fo:font-size="15pt" fo:font-weight="bold" fo:color="#2F5496"',
+                        'fo:margin-top="0.45cm" fo:margin-bottom="0.15cm" fo:keep-with-next="always" '
+                        'fo:border-bottom="0.5pt solid #CCCCDD" fo:padding-bottom="0.05cm"',
+                        ' style:default-outline-level="1"')
+               + estilo("Heading_20_2", "Heading 2", 'fo:font-size="13pt" fo:font-weight="bold" fo:color="#2F5496"',
+                        'fo:margin-top="0.35cm" fo:margin-bottom="0.1cm" fo:keep-with-next="always"',
+                        ' style:default-outline-level="2"')
+               + estilo("Heading_20_3", "Heading 3", 'fo:font-size="11.5pt" fo:font-weight="bold"',
+                        'fo:margin-top="0.3cm" fo:margin-bottom="0.05cm" fo:keep-with-next="always"',
+                        ' style:default-outline-level="3"')
+               + estilo("Cita", "Cita", 'fo:font-style="italic" fo:color="#555555"',
+                        'fo:margin-left="0.6cm" fo:border-left="1.5pt solid #BBBBBB" fo:padding-left="0.2cm"')
+               + estilo("Codigo", "Código", 'fo:font-family="Consolas" fo:font-size="10pt"',
+                        'fo:background-color="#F3F3F3" fo:padding="0.1cm"')
+               + estilo("Raya", "Raya", "", 'fo:border-bottom="0.5pt solid #999999"')
+               + '</office:styles><office:automatic-styles><style:page-layout style:name="pm1">'
+               '<style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" '
+               'fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout>'
+               '</office:automatic-styles><office:master-styles><style:master-page style:name="Standard" '
+               'style:page-layout-name="pm1"/></office:master-styles></office:document-styles>')
+    meta = (f'<?xml version="1.0" encoding="UTF-8"?><office:document-meta {NS_ODF}><office:meta>'
+            f"<dc:title>{_x(titulo_doc)}</dc:title><meta:generator>Apúntalo</meta:generator>"
+            "</office:meta></office:document-meta>")
+    manifiesto = ('<?xml version="1.0" encoding="UTF-8"?>'
+                  '<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3">'
+                  '<manifest:file-entry manifest:full-path="/" manifest:version="1.3" '
+                  'manifest:media-type="application/vnd.oasis.opendocument.text"/>'
+                  + "".join(f'<manifest:file-entry manifest:full-path="{n}" manifest:media-type="text/xml"/>'
+                            for n in ("content.xml", "styles.xml", "meta.xml"))
+                  + "".join(f'<manifest:file-entry manifest:full-path="{r}" manifest:media-type="{m}"/>'
+                            for r, _, m in imagenes)
+                  + "</manifest:manifest>")
+    destino = Path(destino)
+    with zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(zipfile.ZipInfo("mimetype"), "application/vnd.oasis.opendocument.text",
+                   compress_type=zipfile.ZIP_STORED)          # debe ir primero y sin comprimir
+        z.writestr("META-INF/manifest.xml", manifiesto)
+        z.writestr("content.xml", contenido)
+        z.writestr("styles.xml", estilos)
+        z.writestr("meta.xml", meta)
+        for ruta, datos, _ in imagenes:
+            z.writestr(ruta, datos)
+    return destino
+
+
+# ---------- Catálogo para la ventana «Exportar» ----------
+# clave: (nombre, extensión, para qué sirve, función)
+FORMATOS = {
+    "pdf": ("PDF", ".pdf", "Para imprimir, enviar o subir a la plataforma de clase.", a_pdf),
+    "docx": ("Word", ".docx", "Para seguir editando en Word, Google Docs o LibreOffice.", a_docx),
+    "odt": ("OpenDocument", ".odt", "Para LibreOffice u OpenOffice (formato libre).", a_odt),
+    "html": ("Página web", ".html", "Se abre en cualquier navegador o móvil, con las imágenes dentro.", a_html_archivo),
+    "md": ("Markdown", ".md", "Para Obsidian, Notion o GitHub. Las imágenes van en una carpeta aparte.", a_md),
+    "txt": ("Texto sin formato", ".txt", "Solo el texto, para cualquier programa.", a_txt),
+}
+
+
+def exportar_como(formato, notas, destino, titulo_doc):
+    return FORMATOS[formato][3](notas, destino, titulo_doc)
