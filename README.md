@@ -1,5 +1,9 @@
 # Apúntalo ✏️
 
+[![PyPI](https://img.shields.io/pypi/v/apuntalo)](https://pypi.org/project/apuntalo/)
+[![Python](https://img.shields.io/pypi/pyversions/apuntalo)](https://pypi.org/project/apuntalo/)
+[![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-green)](https://github.com/BV-cs0/apuntalo/blob/main/LICENSE)
+
 **Toma nota de la clase.** Programa gratuito y de código abierto para sacar apuntes de clase en Windows, pensado para quien no tiene una herramienta para tomarlos. Escribes tus notas, o dejas que la app las tome sola de lo que se oye y se ve en la pantalla. Después las ordenas por asignatura y las exportas a PDF o a Word.
 
 ![Captura de la aplicación](https://raw.githubusercontent.com/BV-cs0/apuntalo/main/docs/captura.png)
@@ -42,9 +46,9 @@ Al abrirlo puede pasar esto:
 - Windows avisa con «Windows protegió su PC» porque el programa no está firmado: pulsa *Más información* → *Ejecutar de todas formas*.
 - Si tienes activado el **Control inteligente de aplicaciones** de Windows 11, puede que el `.exe` quede bloqueado. En ese caso usa la opción 2.
 
-### Opción 2: instalar con Python (`pip`) — *próximamente*
+### Opción 2: instalar con Python (`pip`)
 
-> El paquete todavía no está publicado en PyPI. Mientras tanto puedes instalarlo desde GitHub: `py -m pip install git+https://github.com/BV-cs0/apuntalo`
+Apúntalo está en [PyPI](https://pypi.org/project/apuntalo/).
 
 Necesitas [Python 3.10 o superior](https://www.python.org/downloads/). Al instalarlo, marca «Add python.exe to PATH». Después abre una terminal y escribe:
 
@@ -123,9 +127,9 @@ Para generar el `.exe`: `py -3 -m pip install -r requirements.txt` y después ej
 
 1. Sube el número en `apuntalo/__init__.py` (`__version__`).
 2. Crea una *Release* en GitHub con la etiqueta `vX.Y.Z` y adjunta el `Apuntalo.exe` nuevo.
-3. Para subirlo a PyPI: *Actions* → **Publicar en PyPI** → *Run workflow* (`.github/workflows/publicar.yml`). Requiere tener configurado el *Trusted Publisher* en PyPI.
+3. Para subirlo a PyPI: *Actions* → **Publicar en PyPI** → *Run workflow* (`.github/workflows/publicar.yml`). Usa *Trusted Publishing*, sin contraseñas ni tokens. PyPI no deja volver a subir un número de versión que ya existe.
 
-## Qué probar (lista para la versión 1.0)
+## Qué probar (lista para la versión 1.1)
 
 - [ ] **Abrir:** doble clic en `Apuntalo.exe` (o en `Abrir apuntes.bat`). La ventana se abre y, la segunda vez, vuelve al último apunte.
 - [ ] **pip:** `py -m pip install apuntalo` y después `py -m apuntalo`. Se abre y guarda los apuntes en `Documentos\Apuntalo`.

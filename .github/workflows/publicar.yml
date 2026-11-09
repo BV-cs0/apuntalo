@@ -1,9 +1,8 @@
 name: Publicar en PyPI
 
-# De momento se lanza a mano (Actions > Publicar en PyPI > Run workflow), hasta
-# configurar el "Trusted Publisher" en PyPI. Después se puede volver a activar
-# al publicar una Release con:  release: types: [published]
-# Usa "Trusted Publishing" de PyPI: no hace falta guardar ninguna contraseña ni token en GitHub.
+# Se lanza a mano: Actions > Publicar en PyPI > Run workflow, después de subir __version__.
+# Usa "Trusted Publishing" de PyPI (ya configurado para BV-cs0/apuntalo, entorno "pypi"):
+# no hace falta guardar ninguna contraseña ni token en GitHub.
 on:
   workflow_dispatch:
 
