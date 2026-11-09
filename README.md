@@ -17,6 +17,7 @@
   - **Google Gemini**, con una clave gratuita de [Google AI Studio](https://aistudio.google.com/apikey). En el plan gratuito, Google puede usar los textos para mejorar sus productos.
   - **Claude** (Anthropic), con una clave de pago de [console.anthropic.com](https://console.anthropic.com). Cuesta unos céntimos por clase.
 - **📤 Exportar a PDF y Word**: un apunte, una asignatura entera o todo, con títulos, negritas, listas, asignatura y fecha.
+- **🖼 Imágenes con Ctrl+V**: haz un recorte con Win+Shift+S (o copia una imagen) y pégalo en el apunte. Se ve dentro del texto y sale también en el PDF y en el Word.
 - **⏱ Marcas de tiempo, ▶ cronómetro y 📎 adjuntar capturas o PDF.**
 
 ## Instalar
@@ -57,6 +58,7 @@ Descarga el código y haz doble clic en **`Abrir apuntes.bat`**. Los apuntes se 
 |---|---|
 | Ctrl+N / Ctrl+S | Nuevo apunte / Guardar |
 | Ctrl+F | Buscar |
+| Ctrl+V | Pegar texto o **imágenes**: un recorte (Win+Shift+S), una imagen copiada del navegador o archivos copiados en el Explorador. Se guardan en los adjuntos del apunte y se ven dentro del texto |
 | Ctrl+T | Insertar la hora, o el minuto del vídeo si el cronómetro está en marcha |
 | Ctrl+E | Exportar a PDF o Word |
 | F8 | Empezar o parar los apuntes automáticos |
@@ -115,6 +117,7 @@ Para generar el `.exe`: `py -3 -m pip install -r requirements.txt` y después ej
 - [ ] **pip:** `py -m pip install apuntalo` y después `py -m apuntalo`. Se abre y guarda los apuntes en `Documentos\Apuntalo`.
 - [ ] **Organizar:** crea la carpeta `Matemáticas/Tema 1` y un apunte con la plantilla *Clase / estudio*. Ponle etiquetas y búscalo con Ctrl+F.
 - [ ] **Formato:** escribe `# Título`, `**negrita**` y `- [x] tarea` y comprueba que se colorean. Prueba Ctrl + y Ctrl - para cambiar el tamaño de la letra.
+- [ ] **Imágenes:** haz un recorte con Win+Shift+S y pulsa Ctrl+V en un apunte. La imagen aparece dentro del texto. Exporta a Word y comprueba que sale. Copia texto normal y comprueba que Ctrl+V sigue pegando texto.
 - [ ] **Autoguardado:** escribe algo, espera 15 segundos y cierra la app desde el Administrador de tareas. Al volver a abrirla, el texto sigue ahí.
 - [ ] **Sobre un vídeo:** pon un vídeo de YouTube y pulsa F9 (fijar) y F10 (compacto). Ajusta la transparencia y prueba Ctrl+Alt+A desde el navegador.
 - [ ] **Automático con audio:** F8, marca solo 🎧 y pon un vídeo con voz. Comprueba que el texto aparece en párrafos con su `[hh:mm:ss]` y sin repeticiones.

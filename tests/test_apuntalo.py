@@ -49,6 +49,42 @@ class TestNotas(TemporalMixin, unittest.TestCase):
         self.assertEqual(cuerpo, "# Hola\n")
 
 
+def dib_de_prueba(ancho=2, alto=2, bits=32):
+    """DIB de abajo arriba: fila de abajo roja, el resto azul."""
+    import struct
+    bpp = bits // 8
+    paso = ((ancho * bits + 31) // 32) * 4
+    cab = struct.pack("<IiiHHIIiiII", 40, ancho, alto, 1, bits, 0, 0, 0, 0, 0, 0)
+    rojo, azul = b"\x00\x00\xff\x00"[:bpp], b"\xff\x00\x00\x00"[:bpp]
+    fila_abajo = (rojo * ancho).ljust(paso, b"\x00")
+    fila_arriba = (azul * ancho).ljust(paso, b"\x00")
+    return cab + fila_abajo + fila_arriba * (alto - 1)
+
+
+class TestPortapapeles(unittest.TestCase):
+    def test_dib_a_png(self):
+        import zlib
+        from apuntalo import portapapeles
+        for bits in (24, 32):
+            png = portapapeles.dib_a_png(dib_de_prueba(bits=bits))
+            self.assertEqual(portapapeles.tamano_png(png), (2, 2))
+            idat = png[png.index(b"IDAT") + 4:png.index(b"IEND") - 8]
+            filas = zlib.decompress(idat)
+            # PNG va de arriba abajo: primero azul, luego rojo (cada fila: filtro + 2 píxeles RGB)
+            self.assertEqual(filas, b"\x00" + b"\x00\x00\xff" * 2 + b"\x00" + b"\xff\x00\x00" * 2)
+
+    def test_dib_no_admitido(self):
+        from apuntalo import portapapeles
+        with self.assertRaises(ValueError):
+            portapapeles.dib_a_png(dib_de_prueba(bits=32)[:50])
+
+    def test_tamano_imagen_jpeg(self):
+        import struct
+        jpeg = b"\xff\xd8" + b"\xff\xe0" + struct.pack(">H", 4) + b"\x00\x00" + \
+               b"\xff\xc0" + struct.pack(">HBHH", 11, 8, 480, 640) + b"\x00" * 6
+        self.assertEqual(exportar.tamano_imagen(jpeg), (640, 480))
+
+
 class TestCarpetaDatos(unittest.TestCase):
     def test_variable_de_entorno_manda(self):
         from unittest import mock
@@ -119,6 +155,24 @@ class TestExportar(unittest.TestCase):
         self.assertIn('w:type="page"', doc)  # salto de página entre apuntes
         self.assertIn("Clase &amp; &lt;1&gt;", doc)
 
+    def test_docx_con_imagen(self):
+        from apuntalo import portapapeles
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "foto.png").write_bytes(portapapeles.dib_a_png(dib_de_prueba(4000, 2)))
+            nota = dict(self.nota(), cuerpo="Antes\n![foto](<foto.png>)\nDespués\n", carpeta=tmp)
+            destino = Path(tmp) / "b.docx"
+            exportar.a_docx([nota], destino, "Física")
+            with zipfile.ZipFile(destino) as z:
+                for nombre in z.namelist():
+                    if nombre.endswith(".xml") or nombre.endswith(".rels"):
+                        xml.dom.minidom.parseString(z.read(nombre))
+                self.assertIn("word/media/imagen1.png", z.namelist())
+                doc = z.read("word/document.xml").decode("utf-8")
+                rels = z.read("word/_rels/document.xml.rels").decode("utf-8")
+        self.assertIn('r:embed="rIdImg1"', doc)
+        self.assertIn(f'cx="{exportar.ANCHO_UTIL_EMU}"', doc)  # imagen ancha: se ajusta a la página
+        self.assertIn('Target="media/imagen1.png"', rels)
+
 
 class TestVentana(TemporalMixin, unittest.TestCase):
     """Prueba de humo de la interfaz (se salta si no hay pantalla)."""
@@ -155,6 +209,27 @@ class TestVentana(TemporalMixin, unittest.TestCase):
         self.app.busqueda.set("no-aparece")
         self.app.refrescar()
         self.assertEqual(len(self.app.arbol.get_children("dir:Tema 1")), 0)
+
+    def test_pegar_imagen_con_ctrl_v(self):
+        from unittest import mock
+        from apuntalo import portapapeles
+        with mock.patch.object(ap.simpledialog, "askstring", return_value="Con imagen"):
+            self.app.nueva()
+        self.app.texto.insert("end", "Texto antes")
+        png = portapapeles.dib_a_png(dib_de_prueba(10, 10))
+        with mock.patch.object(portapapeles, "hay_texto", return_value=False), \
+                mock.patch.object(portapapeles, "imagen_png", return_value=png):
+            self.assertEqual(self.app.pegar(), "break")
+        texto = self.app.texto.get("1.0", "end-1c")
+        self.assertRegex(texto, r"Texto antes\n!\[imagen [^\]]+\]\(<_adjuntos/imagen [^>]+\.png>\)\n")
+        self.assertEqual(len(list(ap.ADJUNTOS.glob("*.png"))), 1)
+        self.app.resaltar()
+        self.assertEqual(len(self.app.texto.dump("1.0", "end", image=True)), 1)   # vista previa
+        self.app.guardar()
+        self.assertNotIn("pyimage", (ap.NOTAS / "Con imagen.md").read_text(encoding="utf-8"))
+        # Con texto en el portapapeles, Ctrl+V pega texto normal
+        with mock.patch.object(portapapeles, "hay_texto", return_value=True):
+            self.assertIsNone(self.app.pegar())
 
     def test_tamano_de_letra(self):
         self.app.cambiar_letra(+3)

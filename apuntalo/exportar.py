@@ -2,6 +2,7 @@
 import html
 import re
 import shutil
+import struct
 import subprocess
 import tempfile
 import zipfile
@@ -194,9 +195,65 @@ def _p(contenido, estilo=None, ind=None, salto=False):
     return f"<w:p><w:pPr>{ppr}</w:pPr>{pre}{contenido}</w:p>"
 
 
+ANCHO_UTIL_EMU = 9638 * 635        # ancho de texto de la página A4 con márgenes de 2 cm
+EMU_POR_PIXEL = 9525               # a 96 ppp
+
+
+def tamano_imagen(datos):
+    """(ancho, alto) en píxeles de un PNG o JPEG, o None."""
+    if datos[:8] == b"\x89PNG\r\n\x1a\n":
+        return struct.unpack(">II", datos[16:24])
+    if datos[:2] == b"\xff\xd8":
+        i = 2
+        while i + 9 < len(datos):
+            if datos[i] != 0xFF:
+                i += 1
+                continue
+            marca = datos[i + 1]
+            if marca in (0xD8, 0x01) or 0xD0 <= marca <= 0xD7:
+                i += 2
+                continue
+            largo = struct.unpack(">H", datos[i + 2:i + 4])[0]
+            if 0xC0 <= marca <= 0xCF and marca not in (0xC4, 0xC8, 0xCC):
+                alto, ancho = struct.unpack(">HH", datos[i + 5:i + 9])
+                return ancho, alto
+            i += 2 + largo
+    return None
+
+
+def _imagen_docx(ruta, imagenes):
+    """XML de una imagen incrustada (PNG/JPEG) y la registra en `imagenes`; None si no se puede."""
+    try:
+        datos = ruta.read_bytes()
+    except OSError:
+        return None
+    tam = tamano_imagen(datos)
+    if not tam or not all(tam):
+        return None
+    ext = "png" if datos[:4] == b"\x89PNG" else "jpeg"
+    n = len(imagenes) + 1
+    rid = f"rIdImg{n}"
+    imagenes.append((rid, f"media/imagen{n}.{ext}", datos))
+    cx, cy = tam[0] * EMU_POR_PIXEL, tam[1] * EMU_POR_PIXEL
+    if cx > ANCHO_UTIL_EMU:
+        cx, cy = ANCHO_UTIL_EMU, int(cy * ANCHO_UTIL_EMU / cx)
+    return (f'<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
+            f'<wp:extent cx="{cx}" cy="{cy}"/><wp:docPr id="{n}" name="Imagen {n}"/>'
+            '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            f'<pic:nvPicPr><pic:cNvPr id="{n}" name="imagen{n}.{ext}"/><pic:cNvPicPr/></pic:nvPicPr>'
+            f'<pic:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+            f'<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
+            '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic>'
+            "</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>")
+
+
 def a_docx(notas, destino, titulo_doc):
     W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ' \
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+    WP = ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+    imagenes = []
     cuerpo = []
     for n, nota in enumerate(notas):
         cuerpo.append(_p(_runs(nota["titulo"]), "Title", salto=bool(n)))
@@ -209,7 +266,12 @@ def a_docx(notas, destino, titulo_doc):
                 cuerpo.append('<w:p><w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="1" w:color="999999"/>'
                               "</w:pBdr></w:pPr></w:p>")
             elif t == "img":
-                cuerpo.append(_p(_runs(f"[Adjunto: {b['texto']}]", '<w:i/><w:color w:val="777777"/>')))
+                src = (Path(nota.get("carpeta", ".")) / b["src"]).resolve()
+                dibujo = _imagen_docx(src, imagenes)
+                if dibujo:
+                    cuerpo.append(f'<w:p><w:pPr><w:spacing w:before="80" w:after="120"/></w:pPr>{dibujo}</w:p>')
+                else:
+                    cuerpo.append(_p(_runs(f"[Adjunto: {b['texto']}]", '<w:i/><w:color w:val="777777"/>')))
             elif t in ("ul", "ol", "tarea"):
                 marca = {"ul": "•", "ol": b.get("num", "") + ".", "tarea": "☑" if b.get("hecha") else "☐"}[t]
                 cuerpo.append(_p(f'<w:r><w:t xml:space="preserve">{_x(marca)}</w:t></w:r><w:r><w:tab/></w:r>'
@@ -223,7 +285,7 @@ def a_docx(notas, destino, titulo_doc):
                 cuerpo.append(_p(_runs(b["texto"]), "Quote"))
             else:
                 cuerpo.append(_p(_runs(b["texto"])))
-    documento = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {W}><w:body>'
+    documento = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {W}{WP}><w:body>'
                  + "".join(cuerpo) +
                  '<w:sectPr><w:headerReference w:type="default" r:id="rIdH"/>'
                  '<w:footerReference w:type="default" r:id="rIdF"/>'
@@ -267,6 +329,8 @@ def a_docx(notas, destino, titulo_doc):
              '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
              '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
              '<Default Extension="xml" ContentType="application/xml"/>'
+             '<Default Extension="png" ContentType="image/png"/>'
+             '<Default Extension="jpeg" ContentType="image/jpeg"/>'
              '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
              '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
              '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>'
@@ -283,11 +347,13 @@ def a_docx(notas, destino, titulo_doc):
                 '<Relationship Id="rIdS" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
                 '<Relationship Id="rIdH" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>'
                 '<Relationship Id="rIdF" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>'
-                "</Relationships>")
+                + "".join(f'<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                          f'relationships/image" Target="{ruta}"/>' for rid, ruta, _ in imagenes)
+                + "</Relationships>")
     core = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
             'xmlns:dc="http://purl.org/dc/elements/1.1/">'
-            f"<dc:title>{_x(titulo_doc)}</dc:title><dc:creator>Apuntes</dc:creator></cp:coreProperties>")
+            f"<dc:title>{_x(titulo_doc)}</dc:title><dc:creator>Apúntalo</dc:creator></cp:coreProperties>")
     destino = Path(destino)
     with zipfile.ZipFile(destino, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("[Content_Types].xml", tipos)
@@ -298,4 +364,6 @@ def a_docx(notas, destino, titulo_doc):
         z.writestr("word/header1.xml", cabecera)
         z.writestr("word/footer1.xml", pie)
         z.writestr("word/_rels/document.xml.rels", doc_rels)
+        for _, ruta, datos in imagenes:
+            z.writestr("word/" + ruta, datos)
     return destino

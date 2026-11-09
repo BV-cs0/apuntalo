@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import exportar
+from . import exportar, portapapeles
 
 PAQUETE = Path(__file__).resolve().parent
 
@@ -350,6 +350,7 @@ class App(tk.Tk):
         scroll.pack(side="right", fill="y")
         self.texto.pack(fill="both", expand=True)
         self.texto.bind("<<Modified>>", self._modificado)
+        self.texto.bind("<<Paste>>", self.pegar)  # Ctrl+V / Mayús+Insert: imágenes y archivos
         self.estado = ttk.Label(der, text="", foreground="gray")
         self.estado.pack(side="bottom", anchor="w", before=marco)  # siempre visible abajo
         panel.add(der, weight=3)
@@ -414,7 +415,9 @@ class App(tk.Tk):
         t = self.texto
         for tag in ("h1", "h2", "h3", "negrita", "cursiva", "codigo", "cita", "tiempo", "hecha", "vineta"):
             t.tag_remove(tag, "1.0", "end")
-        for n, linea in enumerate(t.get("1.0", "end-1c").split("\n"), start=1):
+        lineas = t.get("1.0", "end-1c").split("\n")
+        self.mostrar_imagenes(lineas)
+        for n, linea in enumerate(lineas, start=1):
             if not linea:
                 continue
             m = re.match(r"(#{1,3})\s", linea)
@@ -628,18 +631,96 @@ class App(tk.Tk):
             ("Imágenes y PDF", "*.png *.jpg *.jpeg *.gif *.bmp *.webp *.pdf"), ("Todos", "*.*")])
         if not archivo:
             return
-        ADJUNTOS.mkdir(parents=True, exist_ok=True)
         origen = Path(archivo)
-        destino = ADJUNTOS / origen.name
-        n = 2
-        while destino.exists():
-            destino = ADJUNTOS / f"{origen.stem} ({n}){origen.suffix}"
-            n += 1
+        destino = self._ruta_adjunto(origen.name)
         shutil.copy2(origen, destino)
-        rel = os.path.relpath(destino, self.actual.parent).replace("\\", "/")
-        signo = "!" if origen.suffix.lower() != ".pdf" else ""
-        self.texto.insert("insert", f"\n{signo}[{origen.name}](<{rel}>)\n")
+        self._insertar_adjunto(destino)
         abrir_en_sistema(destino)  # se abre al lado para pasarlo a limpio
+
+    def _ruta_adjunto(self, nombre):
+        """Ruta libre en _adjuntos para un archivo nuevo."""
+        ADJUNTOS.mkdir(parents=True, exist_ok=True)
+        base = Path(nombre)
+        destino, n = ADJUNTOS / base.name, 2
+        while destino.exists():
+            destino = ADJUNTOS / f"{base.stem} ({n}){base.suffix}"
+            n += 1
+        return destino
+
+    def _insertar_adjunto(self, destino):
+        """Pone el enlace Markdown al adjunto en una línea propia, donde está el cursor."""
+        rel = os.path.relpath(destino, self.actual.parent).replace("\\", "/")
+        signo = "" if destino.suffix.lower() == ".pdf" else "!"
+        antes = "" if self.texto.compare("insert", "==", "insert linestart") else "\n"
+        self.texto.insert("insert", f"{antes}{signo}[{destino.stem}](<{rel}>)\n")
+        self.texto.see("insert")
+
+    def pegar(self, _e=None):
+        """Ctrl+V: si hay una imagen o archivos copiados, se guardan como adjuntos; si no, pega texto."""
+        if self.actual is None or str(self.texto.cget("state")) == "disabled":
+            return None
+        if portapapeles.hay_texto():
+            return None  # pegado normal de texto
+        png = portapapeles.imagen_png()
+        if png:
+            destino = self._ruta_adjunto(f"imagen {datetime.now():%Y-%m-%d %H.%M.%S}.png")
+            destino.write_bytes(png)
+            self._insertar_adjunto(destino)
+            self.estado.configure(text=f"🖼 Imagen pegada: {destino.name}")
+            return "break"
+        rutas = [Path(r) for r in portapapeles.archivos() if Path(r).is_file()]
+        if rutas:
+            for origen in rutas:
+                destino = self._ruta_adjunto(origen.name)
+                shutil.copy2(origen, destino)
+                self._insertar_adjunto(destino)
+            self.estado.configure(text=f"📎 {len(rutas)} archivo(s) pegado(s) como adjuntos")
+            return "break"
+        return None
+
+    # ---------- vista previa de imágenes dentro del editor ----------
+    RE_IMAGEN = re.compile(r"!\[[^\]]*\]\(<?([^)>]+)>?\)")
+    ANCHO_MINIATURA = 420
+
+    def _miniatura(self, ruta):
+        if not hasattr(self, "_miniaturas"):
+            self._miniaturas = {}
+        clave = (str(ruta), ruta.stat().st_mtime)
+        if clave not in self._miniaturas:
+            img = tk.PhotoImage(file=str(ruta))
+            factor = max(1, -(-img.width() // self.ANCHO_MINIATURA))
+            self._miniaturas[clave] = img.subsample(factor) if factor > 1 else img
+        return self._miniaturas[clave]
+
+    def mostrar_imagenes(self, lineas=None):
+        """Muestra debajo de cada enlace ![..](..) a un PNG/GIF la imagen en pequeño (solo en pantalla)."""
+        t = self.texto
+        if self.actual is None:
+            return
+        if lineas is None:
+            lineas = t.get("1.0", "end-1c").split("\n")
+        deseadas = []
+        for n, linea in enumerate(lineas, start=1):
+            m = self.RE_IMAGEN.search(linea)
+            if not m:
+                continue
+            ruta = (self.actual.parent / m.group(1)).resolve()
+            if ruta.suffix.lower() in (".png", ".gif") and ruta.is_file():
+                deseadas.append((n, str(ruta)))
+        nombres = getattr(self, "_img_ruta", {})
+        actuales = [(int(idx.split(".")[0]), nombres.get(nombre)) for _, nombre, idx in t.dump("1.0", "end", image=True)]
+        if actuales == deseadas:
+            return
+        self._img_ruta = {}
+        for _, nombre, _ in t.dump("1.0", "end", image=True):
+            t.delete(nombre)
+        for n, ruta in deseadas:
+            try:
+                img = self._miniatura(Path(ruta))
+            except (tk.TclError, OSError):
+                continue
+            nombre = t.image_create(f"{n}.end", image=img, padx=8, pady=6)
+            self._img_ruta[nombre] = ruta
 
     # ---------- apuntes automáticos (audio + pantalla) ----------
     def alternar_auto(self):
