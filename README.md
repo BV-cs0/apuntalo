@@ -43,6 +43,11 @@ Necesitas [Python 3.10 o superior](https://www.python.org/downloads/). Descarga 
 | F8 | Empezar o parar los apuntes automáticos |
 | F9 / F10 | Fijar encima / Modo compacto |
 | Ctrl+Alt+A | Mostrar u ocultar la ventana desde cualquier programa |
+| Ctrl + / Ctrl - / Ctrl 0 (o Ctrl + rueda) | Letra más grande / más pequeña / normal |
+
+Mientras escribes, el editor colorea el formato: títulos, **negritas**, *cursivas*, `código`, citas, tareas hechas y marcas de tiempo. Además:
+- Se guarda solo cada 15 segundos, al cambiar de apunte y al cerrar.
+- Al abrir la app vuelve al último apunte en el que estabas.
 
 ## Apuntes automáticos: detalles
 
@@ -73,7 +78,23 @@ Tus apuntes se quedan en tu PC. Solo salen de él si usas **Resumir con IA**: co
 3. Mantén la app sin dependencias obligatorias: debe funcionar solo con Python y Windows. Las dependencias opcionales, como `anthropic`, se importan solo cuando se usan.
 4. Escribe la interfaz y los mensajes en español, claros para alguien que no sabe de informática.
 
+Antes de enviar cambios, pasa las pruebas desde la carpeta del proyecto: `py -3 -m unittest -v`.
+
 Para generar el `.exe`: `py -3 -m pip install -r requirements.txt` y después ejecuta `crear_exe.bat`.
+
+## Qué probar (lista para la versión 1.0)
+
+- [ ] **Abrir:** doble clic en `Apuntalo.exe` (o en `Abrir apuntes.bat`). La ventana se abre y, la segunda vez, vuelve al último apunte.
+- [ ] **Organizar:** crea la carpeta `Matemáticas/Tema 1` y un apunte con la plantilla *Clase / estudio*. Ponle etiquetas y búscalo con Ctrl+F.
+- [ ] **Formato:** escribe `# Título`, `**negrita**` y `- [x] tarea` y comprueba que se colorean. Prueba Ctrl + y Ctrl - para cambiar el tamaño de la letra.
+- [ ] **Autoguardado:** escribe algo, espera 15 segundos y cierra la app desde el Administrador de tareas. Al volver a abrirla, el texto sigue ahí.
+- [ ] **Sobre un vídeo:** pon un vídeo de YouTube y pulsa F9 (fijar) y F10 (compacto). Ajusta la transparencia y prueba Ctrl+Alt+A desde el navegador.
+- [ ] **Automático con audio:** F8, marca solo 🎧 y pon un vídeo con voz. Comprueba que el texto aparece en párrafos con su `[hh:mm:ss]` y sin repeticiones.
+- [ ] **Automático con pantalla:** F8, marca 🖥 y elige con ✂ la zona de unas diapositivas. Cambia de diapositiva y comprueba que aparece una captura con su texto.
+- [ ] **ChatGPT:** ✨ Resumir con IA → ChatGPT. Pega en chatgpt.com, copia la respuesta y pulsa «Crear apunte con la respuesta».
+- [ ] **Gemini:** crea una clave gratis en aistudio.google.com/apikey y usa ✨ Resumir con IA → Gemini.
+- [ ] **Exportar:** Ctrl+E y exporta a PDF y a Word un apunte y una asignatura entera. Abre el `.docx` en Word, LibreOffice o Google Docs y comprueba que se ve bien.
+- [ ] **Compacto:** al pasar a modo compacto (F10), todos los botones de la barra pequeña funcionan.
 
 ## Licencia
 

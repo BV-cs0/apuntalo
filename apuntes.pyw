@@ -145,6 +145,7 @@ class App(tk.Tk):
         self.compacto = False
         self.geo_normal = self.cfg.get("geo_normal", "1250x720")
         self.geo_compacta = self.cfg.get("geo_compacta", "440x520")
+        self.tam_letra = int(self.cfg.get("tam_letra", 12))
         self._construir()
         self.geometry(self.geo_normal)
         self.aplicar_encima()
@@ -160,6 +161,17 @@ class App(tk.Tk):
         self.cola_atajo = queue.Queue()
         iniciar_atajo_global(self.cola_atajo)
         self._mirar_atajo()
+        # Reabrir el último apunte y autoguardar cada 15 s (por si se va la luz o se cierra mal).
+        ultima = NOTAS / self.cfg.get("ultima", "-")
+        if self.cfg.get("ultima") and ultima.is_file() and ".." not in Path(self.cfg["ultima"]).parts:
+            self.cargar(ultima)
+            self.refrescar()
+        self.after(15000, self._autoguardar)
+
+    def _autoguardar(self):
+        if self.cambiada:
+            self.guardar(silencioso=True)
+        self.after(15000, self._autoguardar)
 
     # ---------- ventana siempre encima / compacta ----------
     def aplicar_encima(self):
@@ -267,7 +279,7 @@ class App(tk.Tk):
         izq = self.izq = ttk.Frame(panel, padding=4)
         ttk.Label(izq, text="Buscar:").pack(anchor="w")
         self.busqueda = tk.StringVar()
-        self.busqueda.trace_add("write", lambda *a: self.refrescar())
+        self.busqueda.trace_add("write", lambda *a: self._despues("buscar", 250, self.refrescar))
         self.caja_buscar = ttk.Entry(izq, textvariable=self.busqueda)
         self.caja_buscar.pack(fill="x")
         ttk.Label(izq, text="Etiqueta:").pack(anchor="w", pady=(4, 0))
@@ -300,7 +312,9 @@ class App(tk.Tk):
 
         marco = self.marco = ttk.Frame(der)
         marco.pack(fill="both", expand=True, pady=(6, 0))
-        self.texto = tk.Text(marco, wrap="word", undo=True, font=("Consolas", 11), padx=8, pady=8)
+        self.texto = tk.Text(marco, wrap="word", undo=True, font=("Consolas", self.tam_letra), padx=10, pady=8,
+                             spacing1=2, spacing3=2)
+        self._configurar_resaltado()
         scroll = ttk.Scrollbar(marco, command=self.texto.yview)
         self.texto.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
@@ -317,15 +331,81 @@ class App(tk.Tk):
         self.bind_all("<F9>", lambda e: self.alternar_encima())
         self.bind_all("<F10>", lambda e: self.alternar_compacto())
         self.bind_all("<F8>", lambda e: self.alternar_auto())
+        # Tamaño de letra (accesibilidad): Ctrl + / Ctrl - / Ctrl 0 y Ctrl + rueda del ratón
+        for tecla in ("<Control-plus>", "<Control-equal>", "<Control-KP_Add>"):
+            self.bind_all(tecla, lambda e: self.cambiar_letra(+1))
+        for tecla in ("<Control-minus>", "<Control-KP_Subtract>"):
+            self.bind_all(tecla, lambda e: self.cambiar_letra(-1))
+        self.bind_all("<Control-0>", lambda e: self.cambiar_letra(0))
+        self.texto.bind("<Control-MouseWheel>", lambda e: (self.cambiar_letra(1 if e.delta > 0 else -1), "break")[1])
         self.bind_all("<Control-e>", lambda e: self.menu_exportar())
         self._habilitar_editor(False)
 
     def _habilitar_editor(self, si):
         self.texto.configure(state="normal" if si else "disabled")
 
+    # ---------- utilidades de la interfaz ----------
+    def _despues(self, nombre, ms, funcion):
+        """Ejecuta `funcion` cuando pasen `ms` sin volver a pedirlo (para no repetir trabajo al teclear)."""
+        if not hasattr(self, "_pendientes"):
+            self._pendientes = {}
+        if nombre in self._pendientes:
+            self.after_cancel(self._pendientes[nombre])
+        self._pendientes[nombre] = self.after(ms, lambda: (self._pendientes.pop(nombre, None), funcion()))
+
+    def cambiar_letra(self, paso):
+        self.tam_letra = 12 if paso == 0 else max(8, min(32, self.tam_letra + paso))
+        self.texto.configure(font=("Consolas", self.tam_letra))
+        self._configurar_resaltado()
+        self.estado.configure(text=f"Tamaño de letra: {self.tam_letra}  (Ctrl + / Ctrl - / Ctrl 0)")
+
+    def _configurar_resaltado(self):
+        t, n = self.texto, self.tam_letra
+        t.tag_configure("h1", font=("Segoe UI", n + 7, "bold"), foreground="#1F3864")
+        t.tag_configure("h2", font=("Segoe UI", n + 4, "bold"), foreground="#2F5496")
+        t.tag_configure("h3", font=("Segoe UI", n + 2, "bold"), foreground="#2F5496")
+        t.tag_configure("negrita", font=("Consolas", n, "bold"))
+        t.tag_configure("cursiva", font=("Consolas", n, "italic"))
+        t.tag_configure("codigo", background="#EEEEEE")
+        t.tag_configure("cita", foreground="#666666")
+        t.tag_configure("tiempo", foreground="#2F5496")
+        t.tag_configure("hecha", foreground="#888888", overstrike=True)
+        t.tag_configure("vineta", foreground="#2F5496")
+
+    PATRONES = [
+        ("negrita", re.compile(r"\*\*[^*\n]+\*\*")),
+        ("cursiva", re.compile(r"(?<![*\w])\*[^*\s][^*\n]*\*(?!\*)")),
+        ("codigo", re.compile(r"`[^`\n]+`")),
+        ("tiempo", re.compile(r"\[\d{1,2}:\d{2}(?::\d{2})?\]")),
+    ]
+
+    def resaltar(self):
+        """Colorea el Markdown del editor: títulos, negritas, citas, listas, marcas de tiempo."""
+        t = self.texto
+        for tag in ("h1", "h2", "h3", "negrita", "cursiva", "codigo", "cita", "tiempo", "hecha", "vineta"):
+            t.tag_remove(tag, "1.0", "end")
+        for n, linea in enumerate(t.get("1.0", "end-1c").split("\n"), start=1):
+            if not linea:
+                continue
+            m = re.match(r"(#{1,3})\s", linea)
+            if m:
+                t.tag_add("h" + str(len(m.group(1))), f"{n}.0", f"{n}.end")
+                continue
+            if linea.startswith(">"):
+                t.tag_add("cita", f"{n}.0", f"{n}.end")
+            elif re.match(r"\s*[-*+]\s+\[[xX]\]", linea):
+                t.tag_add("hecha", f"{n}.0", f"{n}.end")
+            m = re.match(r"\s*([-*+]|\d+[.)])\s", linea)
+            if m:
+                t.tag_add("vineta", f"{n}.{m.start(1)}", f"{n}.{m.end(1)}")
+            for tag, patron in self.PATRONES:
+                for m in patron.finditer(linea):
+                    t.tag_add(tag, f"{n}.{m.start()}", f"{n}.{m.end()}")
+
     def _modificado(self, _e):
         if self.texto.edit_modified():
             self.marcar_cambio()
+            self._despues("resaltar", 300, self.resaltar)
             self.texto.edit_modified(False)
 
     def marcar_cambio(self):
@@ -393,6 +473,7 @@ class App(tk.Tk):
         self._habilitar_editor(True)
         self.texto.delete("1.0", "end")
         self.texto.insert("1.0", cuerpo)
+        self.resaltar()
         self.texto.edit_reset()
         self.texto.edit_modified(False)
         self._cargando = False
@@ -1050,10 +1131,11 @@ class App(tk.Tk):
             self.geo_compacta = self.geometry()
         else:
             self.geo_normal = self.geometry()
-        guardar_config({"encima": self.encima.get(), "opacidad": round(float(self.opacidad.get()), 2),
-                        "compacto": self.compacto, "geo_normal": self.geo_normal,
-                        "geo_compacta": self.geo_compacta,
-                        **{k: self.cfg[k] for k in ("auto_audio", "auto_pantalla", "auto_zona", "api_key", "gemini_key", "ia_proveedor") if k in self.cfg}})
+        self.cfg.update({"encima": self.encima.get(), "opacidad": round(float(self.opacidad.get()), 2),
+                         "compacto": self.compacto, "geo_normal": self.geo_normal,
+                         "geo_compacta": self.geo_compacta, "tam_letra": self.tam_letra,
+                         "ultima": self.actual.relative_to(NOTAS).as_posix() if self.actual else ""})
+        guardar_config(self.cfg)
         self.destroy()
 
 
