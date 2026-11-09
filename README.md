@@ -33,13 +33,18 @@ Hay dos formas. Elige la que te resulte más cómoda.
 ### Opción 1: descargar el programa (`.exe`), la más fácil
 
 1. Descarga `Apuntalo.exe` desde [**Releases**](https://github.com/BV-cs0/apuntalo/releases/latest).
-2. Guárdalo en una carpeta tuya (por ejemplo, `Documentos\Apuntes`) y ábrelo con doble clic. Tus apuntes se guardan en `notas/`, al lado del `.exe`, así que puedes llevarlo en un pendrive.
+2. Guárdalo en una carpeta tuya (por ejemplo, `Documentos\Apuntes`).
+3. **Ábrelo como administrador**: clic derecho en `Apuntalo.exe` → **Ejecutar como administrador**. Es necesario para que todas las funciones (atajos globales, captura de pantalla y subtítulos en directo) funcionen bien. Tus apuntes se guardan en `notas/`, al lado del `.exe`, así que puedes llevarlo en un pendrive.
+
+> ⚠️ **Es necesario ejecutar Apúntalo como administrador.** Para no tener que hacerlo cada vez: clic derecho en `Apuntalo.exe` → *Propiedades* → *Compatibilidad* → marca **«Ejecutar este programa como administrador»** → *Aceptar*.
 
 Al abrirlo puede pasar esto:
 - Windows avisa con «Windows protegió su PC» porque el programa no está firmado: pulsa *Más información* → *Ejecutar de todas formas*.
 - Si tienes activado el **Control inteligente de aplicaciones** de Windows 11, puede que el `.exe` quede bloqueado. En ese caso usa la opción 2.
 
-### Opción 2: instalar con Python (`pip`)
+### Opción 2: instalar con Python (`pip`) — *próximamente*
+
+> El paquete todavía no está publicado en PyPI. Mientras tanto puedes instalarlo desde GitHub: `py -m pip install git+https://github.com/BV-cs0/apuntalo`
 
 Necesitas [Python 3.10 o superior](https://www.python.org/downloads/). Al instalarlo, marca «Add python.exe to PATH». Después abre una terminal y escribe:
 
@@ -47,14 +52,14 @@ Necesitas [Python 3.10 o superior](https://www.python.org/downloads/). Al instal
 py -m pip install apuntalo
 ```
 
-Para abrirlo, escribe `py -m apuntalo` en la terminal (o solo `apuntalo`, si Windows no lo bloquea). Tus apuntes se guardan en `Documentos\Apuntalo`.
+Para abrirlo, escribe `py -m apuntalo` en una terminal **abierta como administrador** (o solo `apuntalo`, si Windows no lo bloquea). Tus apuntes se guardan en `Documentos\Apuntalo`.
 
 - Para el resumen con Claude: `py -m pip install "apuntalo[claude]"`.
 - Para actualizar a la última versión: `py -m pip install -U apuntalo`.
 
 ### Opción 3: desde el código
 
-Descarga el código y haz doble clic en **`Abrir apuntes.bat`**. Los apuntes se guardan en la propia carpeta del proyecto.
+Descarga el código y abre **`Abrir apuntes.bat`** con clic derecho → *Ejecutar como administrador*. Los apuntes se guardan en la propia carpeta del proyecto.
 
 > En las tres opciones puedes elegir otra carpeta para los apuntes con la variable de entorno `APUNTALO_DATOS`.
 
@@ -118,7 +123,7 @@ Para generar el `.exe`: `py -3 -m pip install -r requirements.txt` y después ej
 
 1. Sube el número en `apuntalo/__init__.py` (`__version__`).
 2. Crea una *Release* en GitHub con la etiqueta `vX.Y.Z` y adjunta el `Apuntalo.exe` nuevo.
-3. Al publicar la Release, GitHub Actions construye el paquete y lo sube a PyPI solo (`.github/workflows/publicar.yml`).
+3. Para subirlo a PyPI: *Actions* → **Publicar en PyPI** → *Run workflow* (`.github/workflows/publicar.yml`). Requiere tener configurado el *Trusted Publisher* en PyPI.
 
 ## Qué probar (lista para la versión 1.0)
 

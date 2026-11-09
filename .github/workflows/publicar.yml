@@ -1,10 +1,11 @@
 name: Publicar en PyPI
 
-# Al publicar una Release en GitHub, se construye el paquete y se sube a PyPI.
+# De momento se lanza a mano (Actions > Publicar en PyPI > Run workflow), hasta
+# configurar el "Trusted Publisher" en PyPI. Después se puede volver a activar
+# al publicar una Release con:  release: types: [published]
 # Usa "Trusted Publishing" de PyPI: no hace falta guardar ninguna contraseña ni token en GitHub.
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
 
 jobs:
   construir:
