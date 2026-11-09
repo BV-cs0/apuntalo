@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apuntalo"
+dynamic = ["version"]
+description = "Apuntes de clase para Windows: transcripción automática, OCR de diapositivas, resumen con IA y exportación a PDF y Word."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Bryan Valenzuela" }]
+requires-python = ">=3.10"
+dependencies = []
+keywords = ["apuntes", "notas", "estudiantes", "clases", "transcripción", "ocr", "markdown", "tkinter"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Win32 (MS Windows)",
+    "Intended Audience :: Education",
+    "Intended Audience :: End Users/Desktop",
+    "Natural Language :: Spanish",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Programming Language :: Python :: 3",
+    "Topic :: Education",
+    "Topic :: Office/Business",
+]
+
+[project.optional-dependencies]
+claude = ["anthropic"]
+
+[project.gui-scripts]
+apuntalo = "apuntalo.app:main"
+
+[project.urls]
+Homepage = "https://github.com/BV-cs0/apuntalo"
+Descargas = "https://github.com/BV-cs0/apuntalo/releases"
+Issues = "https://github.com/BV-cs0/apuntalo/issues"
+
+[tool.setuptools]
+packages = ["apuntalo"]
+
+[tool.setuptools.package-data]
+apuntalo = ["captura.ps1", "apuntalo.ico"]
+
+[tool.setuptools.dynamic]
+version = { attr = "apuntalo.__version__" }

@@ -1,6 +1,4 @@
 """Pruebas de Apúntalo. Ejecutar desde la carpeta del proyecto:  py -3 -m unittest -v"""
-import importlib.machinery
-import importlib.util
 import sys
 import tempfile
 import unittest
@@ -10,18 +8,7 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
-import exportar  # noqa: E402
-
-
-def cargar_app():
-    cargador = importlib.machinery.SourceFileLoader("apuntalo", str(RAIZ / "apuntes.pyw"))
-    spec = importlib.util.spec_from_loader("apuntalo", cargador)
-    modulo = importlib.util.module_from_spec(spec)
-    cargador.exec_module(modulo)
-    return modulo
-
-
-ap = cargar_app()
+from apuntalo import app as ap, exportar  # noqa: E402
 
 
 class TemporalMixin:
@@ -60,6 +47,24 @@ class TestNotas(TemporalMixin, unittest.TestCase):
         meta, cuerpo = ap.leer_nota(ruta)
         self.assertEqual(meta["titulo"], "suelta")
         self.assertEqual(cuerpo, "# Hola\n")
+
+
+class TestCarpetaDatos(unittest.TestCase):
+    def test_variable_de_entorno_manda(self):
+        from unittest import mock
+        with mock.patch.dict("os.environ", {"APUNTALO_DATOS": "X:/mis apuntes"}):
+            self.assertEqual(ap.carpeta_datos(), Path("X:/mis apuntes"))
+
+    def test_instalado_con_pip_usa_documentos(self):
+        from unittest import mock
+        falso = Path("C:/Python/Lib/site-packages/apuntalo")
+        with mock.patch.object(ap, "PAQUETE", falso), mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(ap.carpeta_datos(), ap.carpeta_documentos() / "Apuntalo")
+
+    def test_desde_el_codigo_usa_la_carpeta_del_proyecto(self):
+        from unittest import mock
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(ap.carpeta_datos(), RAIZ)
 
 
 class TestUtilidades(unittest.TestCase):

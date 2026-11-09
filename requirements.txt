@@ -1,5 +1,7 @@
 # La app funciona solo con la biblioteca estándar de Python 3.10+.
 # Opcional: resumen con Claude
 anthropic
-# Opcional: generar Apuntes.exe
+# Opcional: generar Apuntalo.exe y el paquete de PyPI
 pyinstaller
+build
+twine

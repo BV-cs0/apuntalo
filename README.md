@@ -2,7 +2,7 @@
 
 **Toma nota de la clase.** Programa gratuito y de código abierto para sacar apuntes de clase en Windows, pensado para quien no tiene una herramienta para tomarlos. Escribes tus notas, o dejas que la app las tome sola de lo que se oye y se ve en la pantalla. Después las ordenas por asignatura y las exportas a PDF o a Word.
 
-![Captura de la aplicación](docs/captura.png)
+![Captura de la aplicación](https://raw.githubusercontent.com/BV-cs0/apuntalo/main/docs/captura.png)
 
 ## Qué hace
 
@@ -19,18 +19,37 @@
 - **📤 Exportar a PDF y Word**: un apunte, una asignatura entera o todo, con títulos, negritas, listas, asignatura y fecha.
 - **⏱ Marcas de tiempo, ▶ cronómetro y 📎 adjuntar capturas o PDF.**
 
-## Descargar y usar
+## Instalar
 
-1. Descarga `Apuntalo.exe` desde la sección [**Releases**](../../releases).
-2. Guárdalo en una carpeta tuya (por ejemplo, `Documentos\Apuntes`) y ábrelo con doble clic. Tus apuntes se guardan en `notas/`, al lado del `.exe`.
+Hay dos formas. Elige la que te resulte más cómoda.
+
+### Opción 1: descargar el programa (`.exe`), la más fácil
+
+1. Descarga `Apuntalo.exe` desde [**Releases**](https://github.com/BV-cs0/apuntalo/releases/latest).
+2. Guárdalo en una carpeta tuya (por ejemplo, `Documentos\Apuntes`) y ábrelo con doble clic. Tus apuntes se guardan en `notas/`, al lado del `.exe`, así que puedes llevarlo en un pendrive.
 
 Al abrirlo puede pasar esto:
 - Windows avisa con «Windows protegió su PC» porque el programa no está firmado: pulsa *Más información* → *Ejecutar de todas formas*.
-- Si tienes activado el **Control inteligente de aplicaciones** de Windows 11, puede que el `.exe` quede bloqueado. En ese caso usa la versión con Python (abajo).
+- Si tienes activado el **Control inteligente de aplicaciones** de Windows 11, puede que el `.exe` quede bloqueado. En ese caso usa la opción 2.
 
-### Con Python (sin `.exe`)
+### Opción 2: instalar con Python (`pip`)
 
-Necesitas [Python 3.10 o superior](https://www.python.org/downloads/). Descarga el código y haz doble clic en **`Abrir apuntes.bat`**. No hace falta instalar nada más, salvo para el resumen con Claude: `py -3 -m pip install anthropic`.
+Necesitas [Python 3.10 o superior](https://www.python.org/downloads/). Al instalarlo, marca «Add python.exe to PATH». Después abre una terminal y escribe:
+
+```
+py -m pip install apuntalo
+```
+
+Para abrirlo, escribe `py -m apuntalo` en la terminal (o solo `apuntalo`, si Windows no lo bloquea). Tus apuntes se guardan en `Documentos\Apuntalo`.
+
+- Para el resumen con Claude: `py -m pip install "apuntalo[claude]"`.
+- Para actualizar a la última versión: `py -m pip install -U apuntalo`.
+
+### Opción 3: desde el código
+
+Descarga el código y haz doble clic en **`Abrir apuntes.bat`**. Los apuntes se guardan en la propia carpeta del proyecto.
+
+> En las tres opciones puedes elegir otra carpeta para los apuntes con la variable de entorno `APUNTALO_DATOS`.
 
 ## Atajos
 
@@ -64,10 +83,12 @@ Tus apuntes se quedan en tu PC. Solo salen de él si usas **Resumir con IA**: co
 
 | Archivo | Qué hace |
 |---|---|
-| `apuntes.pyw` | La aplicación (Python + tkinter, solo con la biblioteca estándar). |
-| `exportar.py` | Exportar a DOCX (generado a mano) y a PDF (imprimiendo HTML con Microsoft Edge). |
-| `captura.ps1` | Ayudante de PowerShell para el modo automático: lee los Subtítulos en directo y hace capturas con OCR. |
+| `apuntalo/app.py` | La aplicación (Python + tkinter, solo con la biblioteca estándar). |
+| `apuntalo/exportar.py` | Exportar a DOCX (generado a mano) y a PDF (imprimiendo HTML con Microsoft Edge). |
+| `apuntalo/captura.ps1` | Ayudante de PowerShell para el modo automático: lee los Subtítulos en directo y hace capturas con OCR. |
+| `apuntes.pyw` | Lanzador para abrir la app desde el código con doble clic. |
 | `crear_exe.bat` | Genera `Apuntalo.exe` con PyInstaller. |
+| `pyproject.toml` | Configuración del paquete de PyPI (`pip install apuntalo`). |
 
 ## Contribuir
 
@@ -82,9 +103,16 @@ Antes de enviar cambios, pasa las pruebas desde la carpeta del proyecto: `py -3 
 
 Para generar el `.exe`: `py -3 -m pip install -r requirements.txt` y después ejecuta `crear_exe.bat`.
 
+### Publicar una versión nueva (mantenedores)
+
+1. Sube el número en `apuntalo/__init__.py` (`__version__`).
+2. Crea una *Release* en GitHub con la etiqueta `vX.Y.Z` y adjunta el `Apuntalo.exe` nuevo.
+3. Al publicar la Release, GitHub Actions construye el paquete y lo sube a PyPI solo (`.github/workflows/publicar.yml`).
+
 ## Qué probar (lista para la versión 1.0)
 
 - [ ] **Abrir:** doble clic en `Apuntalo.exe` (o en `Abrir apuntes.bat`). La ventana se abre y, la segunda vez, vuelve al último apunte.
+- [ ] **pip:** `py -m pip install apuntalo` y después `py -m apuntalo`. Se abre y guarda los apuntes en `Documentos\Apuntalo`.
 - [ ] **Organizar:** crea la carpeta `Matemáticas/Tema 1` y un apunte con la plantilla *Clase / estudio*. Ponle etiquetas y búscalo con Ctrl+F.
 - [ ] **Formato:** escribe `# Título`, `**negrita**` y `- [x] tarea` y comprueba que se colorean. Prueba Ctrl + y Ctrl - para cambiar el tamaño de la letra.
 - [ ] **Autoguardado:** escribe algo, espera 15 segundos y cierra la app desde el Administrador de tareas. Al volver a abrirla, el texto sigue ahí.
@@ -98,4 +126,4 @@ Para generar el `.exe`: `py -3 -m pip install -r requirements.txt` y después ej
 
 ## Licencia
 
-[MIT](LICENSE): puedes usarlo, copiarlo, modificarlo y compartirlo libremente.
+[MIT](https://github.com/BV-cs0/apuntalo/blob/main/LICENSE): puedes usarlo, copiarlo, modificarlo y compartirlo libremente.
