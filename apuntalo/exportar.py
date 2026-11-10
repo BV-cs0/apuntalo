@@ -10,6 +10,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from .editor import ESTILO_BLOQUE
+
 # ---------- Markdown (subconjunto) ----------
 INLINE = re.compile(r"(\*\*.+?\*\*|__.+?__|`[^`]+`|\*[^*\s][^*]*?\*|!?\[[^\]]*\]\(<?[^)>]*>?\))")
 
@@ -57,9 +59,10 @@ def bloques(md):
             res.append({"tipo": "img", "texto": m[1], "src": m[2]})
         elif m := re.fullmatch(r"[-*+]\s+\[( |x|X)\]\s*(.*)", s):
             res.append({"tipo": "tarea", "hecha": m[1] != " ", "texto": m[2], "nivel": nivel})
-        elif m := re.fullmatch(r"[-*+]\s+(.*)", s):
-            res.append({"tipo": "ul", "texto": m[1], "nivel": nivel})
-        elif m := re.fullmatch(r"(\d+)[.)]\s+(.*)", s):
+        elif m := re.fullmatch(r"([-*+•→])\s+(.*)", s):
+            res.append({"tipo": "ul", "texto": m[2], "nivel": nivel, "marca": "→" if m[1] == "→" else "•"})
+        elif m := re.fullmatch(r"(\d+|(?=[ivx])x{0,3}(?:ix|iv|v?i{0,3})|[a-z])[.)]\s+(.*)", s):
+            # 1. 2. 3. / a. b. c. / i. ii. iii. (las listas con letras y romanos del editor)
             res.append({"tipo": "ol", "num": m[1], "texto": m[2], "nivel": nivel})
         elif s.startswith(">"):
             res.append({"tipo": "cita", "texto": s.lstrip("> ")})
@@ -123,13 +126,14 @@ def a_html(notas, titulo_doc, incrustar=False):
                               base64.b64encode(src.read_bytes()).decode("ascii")
                     cuerpo.append(f'<p><img src="{url}" alt="{html.escape(b["texto"])}"></p>')
             elif t in ("ul", "ol", "tarea"):
-                marca = {"ul": "•", "ol": b.get("num", "") + ".", "tarea": "☑" if b.get("hecha") else "☐"}[t]
+                marca = {"ul": b.get("marca", "•"), "ol": b.get("num", "") + ".", "tarea": "☑" if b.get("hecha") else "☐"}[t]
                 cuerpo.append(f'<p class=li style="margin-left:{sangria}px"><span class=m>{marca}</span>'
                               f"{_inline_html(b['texto'])}</p>")
             elif t == "codigo":
                 cuerpo.append(f"<pre>{html.escape(b['texto'])}</pre>")
             elif t == "cita":
-                cuerpo.append(f"<blockquote>{_inline_html(b['texto'])}</blockquote>")
+                clase = next((f" class={n}" for e, n in ESTILO_BLOQUE.items() if b["texto"].startswith(e)), "")
+                cuerpo.append(f"<blockquote{clase}>{_inline_html(b['texto'])}</blockquote>")
             else:
                 cuerpo.append(f"<p>{_inline_html(b['texto'])}</p>")
         cuerpo.append("</section>")
@@ -148,6 +152,10 @@ p {{ margin: 3pt 0; }}
 pre, code {{ font-family: Consolas, monospace; background: #f3f3f3; }}
 pre {{ padding: 6pt; white-space: pre-wrap; }}
 blockquote {{ border-left: 3px solid #bbb; margin: 4pt 0; padding-left: 8pt; color: #555; }}
+blockquote[class] {{ color: #222; padding: 6pt 10pt; border-radius: 4pt; }}
+.idea {{ background: #FFF6D6; border-color: #E8B800; }} .ojo {{ background: #FFE6E2; border-color: #E0533D; }}
+.resumen {{ background: #E3F5E6; border-color: #3E9B52; }} .nota {{ background: #EEF0F4; border-color: #8A90A0; }}
+.pregunta {{ background: #EFE8FB; border-color: #7B5CC4; }} .definicion {{ background: #E3EEFB; border-color: #2F5496; }}
 img {{ max-width: 100%; }}
 .salto {{ break-before: page; }}
 </style></head><body>{"".join(cuerpo)}</body></html>"""
@@ -283,7 +291,7 @@ def a_docx(notas, destino, titulo_doc):
                 else:
                     cuerpo.append(_p(_runs(f"[Adjunto: {b['texto']}]", '<w:i/><w:color w:val="777777"/>')))
             elif t in ("ul", "ol", "tarea"):
-                marca = {"ul": "•", "ol": b.get("num", "") + ".", "tarea": "☑" if b.get("hecha") else "☐"}[t]
+                marca = {"ul": b.get("marca", "•"), "ol": b.get("num", "") + ".", "tarea": "☑" if b.get("hecha") else "☐"}[t]
                 cuerpo.append(_p(f'<w:r><w:t xml:space="preserve">{_x(marca)}</w:t></w:r><w:r><w:tab/></w:r>'
                                  + _runs(b["texto"]), "Lista", ind=660 + 360 * b.get("nivel", 0)))
             elif t == "codigo":
@@ -454,7 +462,7 @@ def a_txt(notas, destino, titulo_doc):
             elif t == "img":
                 salida.append(f"[Imagen: {b['texto']}]")
             elif t == "ul":
-                salida.append(f"{sangria}• {_plano(b['texto'])}")
+                salida.append(f"{sangria}{b.get('marca', '•')} {_plano(b['texto'])}")
             elif t == "ol":
                 salida.append(f"{sangria}{b['num']}. {_plano(b['texto'])}")
             elif t == "tarea":
@@ -529,7 +537,7 @@ def a_odt(notas, destino, titulo_doc):
                 else:
                     p(f'<text:span text:style-name="Ti">{_odt_texto("[Adjunto: " + b["texto"] + "]")}</text:span>')
             elif t in ("ul", "ol", "tarea"):
-                marca = {"ul": "•", "ol": b.get("num", "") + ".", "tarea": "☑" if b.get("hecha") else "☐"}[t]
+                marca = {"ul": b.get("marca", "•"), "ol": b.get("num", "") + ".", "tarea": "☑" if b.get("hecha") else "☐"}[t]
                 p(f"{_x(marca)}<text:tab/>{_odt_runs(b['texto'])}", f"Lista{min(b.get('nivel', 0), 5)}")
             elif t == "codigo":
                 p("<text:line-break/>".join(_odt_texto(l) for l in b["texto"].split("\n")), "Codigo")

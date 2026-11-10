@@ -131,6 +131,17 @@ class TestExportar(unittest.TestCase):
         self.assertEqual(tipos, ["h1", "p", "ul", "ul", "ol", "tarea", "tarea", "cita", "codigo", "img"])
         self.assertEqual(exportar.bloques(self.MD)[3]["nivel"], 1)
 
+    def test_listas_con_letras_romanos_y_flechas(self):
+        b = exportar.bloques("1. uno\n  a. letra\n    i. romano\n→ flecha\n> 💡 Idea clave: x")
+        self.assertEqual([(x["tipo"], x.get("num"), x["nivel"]) for x in b[:3]],
+                         [("ol", "1", 0), ("ol", "a", 1), ("ol", "i", 2)])
+        self.assertEqual((b[3]["tipo"], b[3]["marca"]), ("ul", "→"))
+        html = exportar.a_html([{"titulo": "T", "cuerpo": "a. letra\n→ flecha\n> 💡 Idea clave: x",
+                                 "carpeta": "."}], "T")
+        self.assertIn("<span class=m>a.</span>", html)
+        self.assertIn("<span class=m>→</span>", html)
+        self.assertIn("<blockquote class=idea>", html)
+
     def test_trozos(self):
         self.assertEqual(exportar.trozos("a **b** *c* `d`"),
                          [("a ", False, False, False), ("b", True, False, False), (" ", False, False, False),
@@ -355,6 +366,47 @@ class TestVentana(TemporalMixin, unittest.TestCase):
         self.assertEqual(len(hechas), 1)
         self.assertIn("**mundo**", self.app.texto.get("1.0", "end"))
         self.assertEqual(self.app.titulo.get(), "Clase 3")
+
+    def test_listas_flechas_y_palabras(self):
+        from unittest import mock
+        with mock.patch.object(ap.simpledialog, "askstring", return_value="Listas"):
+            self.app.nueva()
+        t = self.app.texto
+        t.delete("1.0", "end")
+        t.insert("1.0", "1. Hola")
+        t.mark_set("insert", "1.end")
+        self.assertEqual(self.app._tecla_enter(), "break")
+        self.assertEqual(t.get("1.0", "end-1c"), "1. Hola\n2. ")
+        self.assertEqual(t.index("insert"), "2.3")
+        self.assertEqual(self.app._tecla_retroceso(), "break")          # 2. vacío -> a.
+        self.assertEqual(t.get("1.0", "end-1c"), "1. Hola\n  a. ")
+        self.app._tecla_retroceso()                                       # a. vacío -> vuelve a 2.
+        self.assertEqual(t.get("1.0", "end-1c"), "1. Hola\n2. ")
+        self.app._tecla_retroceso()                                       # y ahora quita la viñeta
+        self.assertEqual(t.get("1.0", "end-1c"), "1. Hola\n")
+        t.insert("insert", "2. ")
+        self.app._tecla_retroceso()
+        self.assertEqual(t.get("1.0", "end-1c"), "1. Hola\n  a. ")
+        t.insert("insert", "x")
+        self.app._tecla_enter()
+        self.assertEqual(t.get("1.0", "end-1c"), "1. Hola\n  a. x\n  b. ")
+        t.edit_reset()
+        t.insert("insert", "va ->")
+        self.assertEqual(self.app._tecla_espacio(), "break")
+        self.assertTrue(t.get("1.0", "end-1c").endswith("  b. va → "))
+        t.edit_undo()                                                     # Ctrl+Z devuelve el ->
+        self.assertTrue(t.get("1.0", "end-1c").endswith("  b. va ->"))
+        t.mark_set("insert", "end-1c")
+        self.assertEqual(self.app._borrar_palabra(adelante=False), "break")
+        self.assertTrue(t.get("1.0", "end-1c").endswith("  b. va "))
+        self.app.resaltar()
+        self.assertTrue([n for n in t.tag_names("2.0") if n.startswith("colgante_")])
+        self.app.insertar_bloque("> 💡 Idea clave: ")
+        self.app.resaltar()
+        self.assertTrue(t.tag_ranges("bloque_idea"))
+        self.app.alternar_tema()
+        self.assertTrue(self.app.oscuro)
+        self.app.alternar_tema()
 
     def test_tamano_de_letra(self):
         self.app.cambiar_letra(+3)

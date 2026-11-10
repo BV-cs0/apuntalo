@@ -28,6 +28,8 @@ classifiers = [
 
 [project.optional-dependencies]
 claude = ["anthropic"]
+ortografia = ["pyspellchecker"]   # inglés si Windows no trae ese diccionario
+orthografia = ["pyspellchecker"]   # inglés si Windows no trae ese diccionario
 
 [project.gui-scripts]
 apuntalo = "apuntalo.app:main"

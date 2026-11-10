@@ -11,7 +11,9 @@
 ## Qué hace
 
 - **Apuntes organizados**: una carpeta por asignatura, un apunte por clase, con etiquetas y buscador. Cada apunte es un archivo Markdown (`.md`) normal, así que tus apuntes son tuyos y se abren con cualquier editor.
-- **Encima del vídeo de la clase**: la ventana se puede fijar siempre encima (📌), hacerse pequeña y semitransparente (🗗 Compacto), y mostrarse u ocultarse desde cualquier programa con **Ctrl+Alt+A**.
+- **Encima del vídeo de la clase**: la ventana se puede fijar siempre encima (📌), hacerse pequeña y semitransparente (🗗 Compacto), y mostrarse u ocultarse desde cualquier programa con **Ctrl+Alt+A**. Fijada sobre un vídeo a pantalla completa, puede esconder la barra de tareas de Windows mientras escribes (clic derecho en 📌).
+- **Listas y esquemas como en Canva**: numeración automática con subniveles `a.` e `i.`, flechas (`->` da →), bloques de color (💡 idea, ⚠ ojo, ✅ resumen...) y **modo oscuro** (botón ☾). El título sale grande y centrado, y los comandos entre `comillas` en un recuadro.
+- **✓ Corrector en español e inglés**: subraya en rojo las faltas mientras escribes y, con **F7**, te pregunta «¿Quieres corregir estas palabras?» con la sugerencia de cada una. No marca el código, los enlaces ni las siglas.
 - **🤖 Apuntes automáticos**:
   - 🎧 Transcribe lo que se escucha con los *Subtítulos en directo* de Windows 11, sin internet.
   - 🖥 Guarda cada diapositiva nueva con su texto, leído con el OCR de Windows.
@@ -81,10 +83,21 @@ Descarga el código y abre **`Abrir apuntes.bat`** con clic derecho → *Ejecuta
 | F9 / F10 | Fijar encima / Modo compacto |
 | Ctrl+Alt+A | Mostrar u ocultar la ventana desde cualquier programa |
 | Ctrl + / Ctrl - / Ctrl 0 (o Ctrl + rueda) | Letra más grande / más pequeña / normal |
+| Ctrl+Retroceso / Ctrl+Supr | Borrar la palabra entera a la izquierda / a la derecha |
+| Ctrl+B / Ctrl+K | **Negrita** / *cursiva* (con texto seleccionado lo envuelve) |
+| Enter en una lista | Siguiente elemento (`1.` → `2.`, `a.` → `b.`). En un elemento vacío, termina la lista |
+| Tab / Mayús+Tab | Bajar o subir un nivel de la lista (`1.` → `a.` → `i.`) |
+| Retroceso tras la viñeta | En `2.` vacío pasa a `a.`; en `a.` vuelve al número; otra vez, quita la viñeta |
+| `->` `=>` `<=` `!=` `...` + espacio | Se convierten en → ⇒ ≤ ≠ … (Ctrl+Z lo deshace) |
+| `/idea` `/ojo` `/resumen` `/nota` `/pregunta` `/definicion` + espacio | Bloque destacado de color (también en el botón ➕ Bloque) |
+| F7 | Revisar la ortografía: «¿Quieres corregir estas palabras?» con la sugerencia de cada una (también en ✓ Ortografía) |
+| Clic derecho en una palabra subrayada | Sugerencias, o «Añadir a mi diccionario» para que no se marque más |
+| Clic derecho en 📌 Fijar | Ocultar la barra de tareas mientras escribes sobre un vídeo a pantalla completa |
 
 Mientras escribes, el editor colorea el formato: títulos, **negritas**, *cursivas*, `código`, citas, tareas hechas y marcas de tiempo. Además:
 - Se guarda solo cada 15 segundos, al cambiar de apunte y al cerrar.
 - Al abrir la app vuelve al último apunte en el que estabas.
+- Corrector en **español e inglés a la vez**: subraya en rojo lo mal escrito, pero no el código entre `comillas`, los enlaces, las rutas ni las siglas. Usa el diccionario de Windows; si a Windows le falta el inglés, usa `pyspellchecker` (va incluido en el `.exe`; con pip: `pip install apuntalo[ortografia]`).
 
 ## Apuntes automáticos: detalles
 
@@ -102,6 +115,8 @@ Tus apuntes se quedan en tu PC. Solo salen de él si usas **Resumir con IA**: co
 | Archivo | Qué hace |
 |---|---|
 | `apuntalo/app.py` | La aplicación (Python + tkinter, solo con la biblioteca estándar). |
+| `apuntalo/editor.py` | Lógica del editor sin ventanas: listas que se numeran solas, Tab y Retroceso en listas, borrar palabras, flechas y bloques. |
+| `apuntalo/ortografia.py` | Corrector en español e inglés con el diccionario de Windows (por COM, con `ctypes`) y `pyspellchecker` de respaldo. |
 | `apuntalo/exportar.py` | Exportar a PDF (imprimiendo HTML con Microsoft Edge), DOCX y ODT (generados a mano), HTML, Markdown y texto. |
 | `apuntalo/importar.py` | Importar DOCX, ODT, HTML, Markdown y texto, convirtiéndolos a Markdown. |
 | `apuntalo/portapapeles.py` | Leer imágenes y archivos copiados (Ctrl+V) sin librerías externas. |

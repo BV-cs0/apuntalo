@@ -10,13 +10,35 @@ import subprocess
 import sys
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import exportar, importar, portapapeles
+from . import editor, exportar, importar, ortografia, portapapeles
 
 PAQUETE = Path(__file__).resolve().parent
+
+LETRA = "Segoe UI" if sys.platform == "win32" else "DejaVu Sans"
+MONO = "Consolas" if sys.platform == "win32" else "DejaVu Sans Mono"
+
+# Colores de la app en un solo sitio (claro y oscuro)
+TEMAS = {
+    "claro": {
+        "fondo": "#F3F4F7", "hoja": "#FFFFFF", "texto": "#1F2430", "suave": "#8A90A0", "borde": "#DADDE5",
+        "acento": "#2F5496", "acento_suave": "#E6ECF8", "titulo": "#1F3864", "codigo": "#F1F2F5",
+        "sel": "#CFE0FF", "boton": "#FFFFFF", "boton_hover": "#EAEFF8",
+        "bloques": {"idea": "#FFF6D6", "ojo": "#FFE6E2", "resumen": "#E3F5E6", "nota": "#EEF0F4",
+                    "pregunta": "#EFE8FB", "definicion": "#E3EEFB", "cita": "#F4F5F8"},
+    },
+    "oscuro": {
+        "fondo": "#16181D", "hoja": "#1E2128", "texto": "#E4E6EB", "suave": "#8B92A3", "borde": "#30343D",
+        "acento": "#7AA2F7", "acento_suave": "#26314A", "titulo": "#A9C1FF", "codigo": "#2A2E37",
+        "sel": "#33415E", "boton": "#262A33", "boton_hover": "#30364A",
+        "bloques": {"idea": "#3A3420", "ojo": "#3F2726", "resumen": "#203827", "nota": "#2A2E37",
+                    "pregunta": "#30284A", "definicion": "#22324A", "cita": "#262A33"},
+    },
+}
 
 
 def carpeta_windows(csidl, nombre):
@@ -99,7 +121,7 @@ def slug(texto):
 
 
 def leer_nota(ruta):
-    texto = ruta.read_text(encoding="utf-8")
+    texto = ruta.read_text(encoding="utf-8-sig").replace("\r\n", "\n")   # sin BOM ni saltos de Windows
     meta, cuerpo = {}, texto
     if texto.startswith("---\n"):
         fin = texto.find("\n---\n", 4)
@@ -181,6 +203,12 @@ class App(tk.Tk):
         self.geo_normal = self.cfg.get("geo_normal", "1250x720")
         self.geo_compacta = self.cfg.get("geo_compacta", "440x520")
         self.tam_letra = int(self.cfg.get("tam_letra", 12))
+        self.oscuro = bool(self.cfg.get("oscuro", False))
+        self.ocultar_barra = tk.BooleanVar(value=self.cfg.get("ocultar_barra", False))
+        if self.ocultar_barra.get():
+            self._mostrar_barras()      # por si la última vez se cerró de golpe con la barra escondida
+            import atexit
+            atexit.register(self._mostrar_barras)
         self._construir()
         self.geometry(self.geo_normal)
         self.aplicar_encima()
@@ -189,6 +217,8 @@ class App(tk.Tk):
             self.alternar_compacto()
         self.refrescar()
         self.protocol("WM_DELETE_WINDOW", self.cerrar)
+        self.bind("<FocusIn>", self._al_enfocar, add="+")
+        self.bind("<FocusOut>", self._al_desenfocar, add="+")
         self.proc_auto = None
         self.nota_auto = None
         self.cola_auto = queue.Queue()
@@ -211,6 +241,8 @@ class App(tk.Tk):
     # ---------- ventana siempre encima / compacta ----------
     def aplicar_encima(self):
         self.attributes("-topmost", self.encima.get())
+        if not self.encima.get() and getattr(self, "_barras_ocultas", False):
+            self._mostrar_barras()
         txt = "📌 Fijada" if self.encima.get() else "📌 Fijar"
         for b in (self.btn_fijar, self.btn_fijar2):
             b.configure(text=txt)
@@ -218,6 +250,111 @@ class App(tk.Tk):
     def alternar_encima(self):
         self.encima.set(not self.encima.get())
         self.aplicar_encima()
+
+    def _al_enfocar(self, e=None):
+        """Fijada encima de un vídeo a pantalla completa: Windows saca la barra de tareas al dar el foco
+        a Apúntalo. La mandamos detrás del vídeo (vuelve sola al salir de pantalla completa) o, con la
+        opción «Ocultar la barra de tareas», la escondemos mientras escribes."""
+        if sys.platform == "win32" and self.encima.get() and not getattr(self, "_barra_pendiente", False):
+            self._barra_pendiente = True
+            self.after(450, lambda: setattr(self, "_barra_pendiente", False))
+            for ms in (60, 400):
+                self.after(ms, self._esconder_barra_tareas)
+
+    def _al_desenfocar(self, e=None):
+        # FocusOut también salta al moverse entre campos de la propia ventana: miramos un poco después
+        if getattr(self, "_barras_ocultas", False):
+            self.after(150, self._comprobar_foco)
+
+    def _comprobar_foco(self):
+        try:
+            fuera = self.focus_get() is None
+        except (KeyError, tk.TclError):
+            fuera = True
+        if fuera:
+            self._mostrar_barras()
+
+    def _barras_tareas(self, monitor=None):
+        """Ventanas de la barra de tareas (principal y de otros monitores), opcionalmente de un monitor."""
+        from ctypes import wintypes
+        u = ctypes.windll.user32
+        u.FindWindowExW.restype = wintypes.HWND
+        u.MonitorFromWindow.restype = wintypes.HMONITOR
+        barras = []
+        for clase in ("Shell_TrayWnd", "Shell_SecondaryTrayWnd"):
+            h = u.FindWindowExW(None, None, clase, None)
+            while h:
+                if monitor is None or u.MonitorFromWindow(h, 2) == monitor:
+                    barras.append(h)
+                h = u.FindWindowExW(None, h, clase, None)
+        return barras
+
+    def _mostrar_barras(self):
+        """Vuelve a mostrar las barras de tareas que escondimos nosotros."""
+        if sys.platform != "win32":
+            return
+        try:
+            for h in self._barras_tareas():
+                if not ctypes.windll.user32.IsWindowVisible(h):
+                    ctypes.windll.user32.ShowWindow(h, 8)        # SW_SHOWNA: sin quitarle el foco a nadie
+        except Exception:
+            pass
+        self._barras_ocultas = False
+
+    def alternar_ocultar_barra(self):
+        self.cfg["ocultar_barra"] = bool(self.ocultar_barra.get())
+        guardar_config(self.cfg)
+        if not self.ocultar_barra.get():
+            self._mostrar_barras()
+
+    def _menu_fijar(self, e):
+        m = tk.Menu(self, tearoff=False)
+        m.add_checkbutton(label="Fijar encima de todo (F9)", variable=self.encima, command=self.aplicar_encima)
+        m.add_checkbutton(label="Ocultar la barra de tareas sobre un vídeo a pantalla completa",
+                          variable=self.ocultar_barra, command=self.alternar_ocultar_barra)
+        m.tk_popup(e.x_root, e.y_root)
+
+    def _esconder_barra_tareas(self):
+        try:
+            from ctypes import wintypes
+            u = ctypes.windll.user32
+            u.GetParent.restype = u.GetWindow.restype = u.FindWindowW.restype = wintypes.HWND
+            u.MonitorFromWindow.restype = wintypes.HMONITOR
+
+            class INFO(ctypes.Structure):
+                _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                            ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+
+            yo = u.GetParent(self.winfo_id()) or self.winfo_id()
+            monitor = u.MonitorFromWindow(yo, 2)
+            info = INFO()
+            info.cbSize = ctypes.sizeof(INFO)
+            u.GetMonitorInfoW(monitor, ctypes.byref(info))
+            m = info.rcMonitor
+            barras = self._barras_tareas()
+            h = u.GetWindow(yo, 2)                      # GW_HWNDNEXT: ventanas debajo de la nuestra
+            r = wintypes.RECT()
+            oculta = wintypes.DWORD()
+            while h:
+                oculta.value = 0
+                ctypes.windll.dwmapi.DwmGetWindowAttribute(h, 14, ctypes.byref(oculta), 4)  # DWMWA_CLOAKED
+                fija = u.GetWindowLongW(h, -20) & 0x8                                      # WS_EX_TOPMOST
+                if h not in barras and u.IsWindowVisible(h) and not u.IsIconic(h) and not oculta.value                         and not fija:
+                    u.GetWindowRect(h, ctypes.byref(r))
+                    if (r.left, r.top, r.right, r.bottom) == (m.left, m.top, m.right, m.bottom):
+                        if self.ocultar_barra.get():
+                            for b in self._barras_tareas(monitor):
+                                u.ShowWindow(b, 0)              # SW_HIDE: vuelve al soltar o cerrar
+                            self._barras_ocultas = True
+                        else:   # detrás de la ventana a pantalla completa, sin activarla
+                            for b in self._barras_tareas(monitor):
+                                u.SetWindowPos(b, h, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010)
+                        return
+                    if r.right - r.left > 0 and r.bottom - r.top > 0:
+                        return      # la primera ventana normal debajo no es pantalla completa
+                h = u.GetWindow(h, 2)
+        except Exception:
+            pass
 
     def aplicar_opacidad(self, *_):
         self.attributes("-alpha", max(0.3, min(1.0, float(self.opacidad.get()))))
@@ -276,6 +413,7 @@ class App(tk.Tk):
         clase.pack(fill="x", pady=(3, 0))
         self.btn_fijar = ttk.Button(barra, text="📌 Fijar", command=self.alternar_encima)
         self.btn_fijar.pack(side="right")
+        self.btn_fijar.bind("<Button-3>", self._menu_fijar)
         ttk.Button(barra, text="🗗 Compacto", command=self.alternar_compacto).pack(side="right", padx=4)
         ttk.Button(barra, text="📤 Exportar", command=self.menu_exportar).pack(side="right")
         ttk.Button(barra, text="📥 Importar", command=self.importar).pack(side="right", padx=(0, 4))
@@ -286,6 +424,7 @@ class App(tk.Tk):
         mini = self.mini = ttk.Frame(self, padding=2)
         self.btn_fijar2 = ttk.Button(mini, text="📌", width=9, command=self.alternar_encima)
         self.btn_fijar2.pack(side="left")
+        self.btn_fijar2.bind("<Button-3>", self._menu_fijar)
         ttk.Button(mini, text="⏱", width=3, command=self.marca_tiempo).pack(side="left")
         self.btn_crono2 = ttk.Button(mini, text="▶", width=9, command=self.crono)
         self.btn_crono2.pack(side="left")
@@ -308,6 +447,17 @@ class App(tk.Tk):
         self.btn_crono = ttk.Button(clase, text="▶ Cronómetro", command=self.crono)
         self.btn_crono.pack(side="left", padx=4)
         ttk.Button(clase, text="📎 Adjuntar captura o PDF", command=self.adjuntar).pack(side="left")
+        bloque = ttk.Menubutton(clase, text="➕ Bloque")
+        menu = tk.Menu(bloque, tearoff=False)
+        for comando, texto in editor.BLOQUES.items():
+            menu.add_command(label=f"{texto[2:].strip()}   ({comando})",
+                             command=lambda tx=texto: self.insertar_bloque(tx))
+        bloque.configure(menu=menu)
+        bloque.pack(side="left", padx=4)
+        self.menu_bloque = menu
+        ttk.Button(clase, text="✓ Ortografía", command=self.dialogo_ortografia).pack(side="left")
+        self.btn_tema = ttk.Button(barra, text="☾ Oscuro", command=self.alternar_tema)
+        self.btn_tema.pack(side="right", padx=(0, 4))
 
         panel = self.panel = ttk.PanedWindow(self, orient="horizontal")
         panel.pack(fill="both", expand=True)
@@ -348,18 +498,34 @@ class App(tk.Tk):
 
         marco = self.marco = ttk.Frame(der)
         marco.pack(fill="both", expand=True, pady=(6, 0))
-        self.texto = tk.Text(marco, wrap="word", undo=True, font=("Consolas", self.tam_letra), padx=10, pady=8,
-                             spacing1=2, spacing3=2)
-        self._configurar_resaltado()
+        self.texto = tk.Text(marco, wrap="word", undo=True, font=(LETRA, self.tam_letra), padx=28, pady=18,
+                             spacing1=3, spacing2=2, spacing3=3, relief="flat", borderwidth=0,
+                             highlightthickness=1)
         scroll = ttk.Scrollbar(marco, command=self.texto.yview)
         self.texto.configure(yscrollcommand=scroll.set)
         scroll.pack(side="right", fill="y")
         self.texto.pack(fill="both", expand=True)
-        self.texto.bind("<<Modified>>", self._modificado)
-        self.texto.bind("<<Paste>>", self.pegar)  # Ctrl+V / Mayús+Insert: imágenes y archivos
-        self.texto.bind("<Control-i>", lambda e: self.importar() or "break")   # si no, Tk mete un tabulador
-        self.texto.bind("<BackSpace>", lambda e: self._borrar_imagen(adelante=False))
-        self.texto.bind("<Delete>", lambda e: self._borrar_imagen(adelante=True))
+        t = self.texto
+        t.bind("<<Modified>>", self._modificado)
+        t.bind("<Button-3>", self._menu_texto)
+        t.bind("<<Paste>>", self.pegar)  # Ctrl+V / Mayús+Insert: imágenes y archivos
+        t.bind("<Control-i>", lambda e: self.importar() or "break")   # si no, Tk mete un tabulador
+        t.bind("<BackSpace>", self._tecla_retroceso)
+        t.bind("<Delete>", lambda e: self._borrar_imagen(adelante=True))
+        # Escribir como en Word: borrar palabras, listas que siguen solas, flechas automáticas
+        t.bind("<Control-BackSpace>", lambda e: self._borrar_palabra(adelante=False))
+        t.bind("<Control-Delete>", lambda e: self._borrar_palabra(adelante=True))
+        t.bind("<Return>", self._tecla_enter)
+        t.bind("<KP_Enter>", self._tecla_enter)
+        t.bind("<Tab>", lambda e: self._tecla_tab(atras=False))
+        t.bind("<Shift-Tab>", lambda e: self._tecla_tab(atras=True))
+        try:
+            t.bind("<ISO_Left_Tab>", lambda e: self._tecla_tab(atras=True))   # Mayús+Tab en Linux
+        except tk.TclError:
+            pass
+        t.bind("<space>", self._tecla_espacio)
+        t.bind("<Control-b>", lambda e: self._envolver("**"))
+        t.bind("<Control-k>", lambda e: self._envolver("*"))
         self.estado = ttk.Label(der, text="", foreground="gray")
         self.estado.pack(side="bottom", anchor="w", before=marco)  # siempre visible abajo
         panel.add(der, weight=3)
@@ -379,7 +545,9 @@ class App(tk.Tk):
         self.bind_all("<Control-0>", lambda e: self.cambiar_letra(0))
         self.texto.bind("<Control-MouseWheel>", lambda e: (self.cambiar_letra(1 if e.delta > 0 else -1), "break")[1])
         self.bind_all("<Control-e>", lambda e: self.menu_exportar())
+        self.bind_all("<F7>", lambda e: self.dialogo_ortografia())
         self.bind_all("<Control-i>", lambda e: self.importar() or "break")
+        self.aplicar_tema()
         self._habilitar_editor(False)
 
     def _habilitar_editor(self, si):
@@ -396,23 +564,89 @@ class App(tk.Tk):
 
     def cambiar_letra(self, paso):
         self.tam_letra = 12 if paso == 0 else max(8, min(32, self.tam_letra + paso))
-        self.texto.configure(font=("Consolas", self.tam_letra))
+        self.texto.configure(font=(LETRA, self.tam_letra))
         self._configurar_resaltado()
+        self.resaltar()
         self.estado.configure(text=f"Tamaño de letra: {self.tam_letra}  (Ctrl + / Ctrl - / Ctrl 0)")
 
+    # ---------- aspecto: colores, modo oscuro ----------
+    def aplicar_tema(self):
+        c = self.colores = TEMAS["oscuro" if self.oscuro else "claro"]
+        s = ttk.Style(self)
+        s.theme_use("clam")
+        s.configure(".", background=c["fondo"], foreground=c["texto"], fieldbackground=c["hoja"],
+                    bordercolor=c["borde"], lightcolor=c["fondo"], darkcolor=c["fondo"],
+                    troughcolor=c["fondo"], selectbackground=c["sel"], selectforeground=c["texto"],
+                    insertcolor=c["texto"], arrowcolor=c["suave"], font=(LETRA, 10))
+        s.configure("TButton", background=c["boton"], padding=(10, 4), borderwidth=1, focusthickness=0)
+        s.map("TButton", background=[("pressed", c["acento_suave"]), ("active", c["boton_hover"])],
+              bordercolor=[("active", c["acento"])])
+        s.configure("TMenubutton", background=c["boton"], padding=(10, 4), borderwidth=1)
+        s.map("TMenubutton", background=[("active", c["boton_hover"])])
+        s.configure("TEntry", padding=5)
+        s.configure("TCombobox", padding=4)
+        s.map("TCombobox", fieldbackground=[("readonly", c["hoja"])], foreground=[("readonly", c["texto"])],
+              selectbackground=[("readonly", c["hoja"])], selectforeground=[("readonly", c["texto"])])
+        s.configure("Treeview", background=c["hoja"], fieldbackground=c["hoja"], foreground=c["texto"],
+                    rowheight=int(tkfont.Font(family=LETRA, size=10).metrics("linespace") * 1.7), borderwidth=0)
+        s.map("Treeview", background=[("selected", c["acento_suave"])], foreground=[("selected", c["texto"])])
+        s.configure("TScrollbar", background=c["fondo"], gripcount=0, borderwidth=0)
+        s.map("TScrollbar", background=[("active", c["borde"])])
+        s.configure("TCheckbutton", background=c["fondo"])
+        s.configure("TRadiobutton", background=c["fondo"])
+        self.configure(background=c["fondo"])
+        for clave, valor in (("*Toplevel.background", c["fondo"]), ("*Menu.background", c["hoja"]),
+                             ("*Menu.foreground", c["texto"]), ("*Menu.activeBackground", c["acento_suave"]),
+                             ("*Menu.activeForeground", c["texto"]), ("*TCombobox*Listbox.background", c["hoja"]),
+                             ("*TCombobox*Listbox.foreground", c["texto"])):
+            self.option_add(clave, valor)
+        self.menu_bloque.configure(background=c["hoja"], foreground=c["texto"],
+                                   activebackground=c["acento_suave"], activeforeground=c["texto"])
+        self.texto.configure(background=c["hoja"], foreground=c["texto"], insertbackground=c["acento"],
+                             selectbackground=c["sel"], selectforeground=c["texto"], inactiveselectbackground=c["sel"],
+                             highlightbackground=c["borde"], highlightcolor=c["borde"])
+        self.btn_tema.configure(text="☀ Claro" if self.oscuro else "☾ Oscuro")
+        self._configurar_resaltado()
+
+    def alternar_tema(self):
+        self.oscuro = not self.oscuro
+        self.cfg["oscuro"] = self.oscuro
+        guardar_config(self.cfg)
+        self.aplicar_tema()
+        self.resaltar()
+
     def _configurar_resaltado(self):
-        t, n = self.texto, self.tam_letra
-        t.tag_configure("h1", font=("Segoe UI", n + 7, "bold"), foreground="#1F3864")
-        t.tag_configure("h2", font=("Segoe UI", n + 4, "bold"), foreground="#2F5496")
-        t.tag_configure("h3", font=("Segoe UI", n + 2, "bold"), foreground="#2F5496")
-        t.tag_configure("negrita", font=("Consolas", n, "bold"))
-        t.tag_configure("cursiva", font=("Consolas", n, "italic"))
-        t.tag_configure("codigo", background="#EEEEEE")
-        t.tag_configure("cita", foreground="#666666")
-        t.tag_configure("tiempo", foreground="#2F5496")
-        t.tag_configure("hecha", foreground="#888888", overstrike=True)
-        t.tag_configure("vineta", foreground="#2F5496")
+        t, n, c = self.texto, self.tam_letra, self.colores
+        self._fuente = tkfont.Font(family=LETRA, size=n)
+        # Como en Canva: título grande y centrado con una raya debajo, secciones marcadas
+        t.tag_configure("h1", font=(LETRA, n + 12, "bold"), foreground=c["titulo"], justify="center",
+                        spacing1=18, spacing3=10)
+        t.tag_configure("h2", font=(LETRA, n + 5, "bold"), foreground=c["titulo"], spacing1=18, spacing3=6)
+        # Raya: una línea vacía (o «---») cuyo salto de línea pinta el fondo hasta el borde derecho
+        t.tag_configure("regla", font=(LETRA, 1), background=c["borde"], foreground=c["borde"], spacing1=0, spacing3=0,
+                        lmargin1=0, rmargin=0)
+        t.tag_configure("h3", font=(LETRA, n + 2, "bold"), foreground=c["acento"], spacing1=8, spacing3=2)
+        t.tag_configure("simbolo", foreground=c["suave"])      # los «#» de los títulos, más discretos
+        t.tag_configure("negrita", font=(LETRA, n, "bold"))
+        t.tag_configure("cursiva", font=(LETRA, n, "italic"))
+        t.tag_configure("codigo", font=(MONO, n - 1), background=c["acento_suave"], foreground=c["titulo"])
+        t.tag_configure("bloque_codigo", font=(MONO, n - 1), background=c["codigo"], lmargin1=12, lmargin2=12)
+        t.tag_configure("tiempo", foreground=c["acento"])
+        t.tag_configure("hecha", foreground=c["suave"], overstrike=True)
+        t.tag_configure("vineta", foreground=c["acento"], font=(LETRA, n, "bold"))
+        for nombre, fondo in c["bloques"].items():
+            t.tag_configure("cita" if nombre == "cita" else "bloque_" + nombre, background=fondo,
+                            lmargin1=12, lmargin2=12, rmargin=12, spacing1=6, spacing3=6,
+                            foreground=c["suave"] if nombre == "cita" else c["texto"])
+        t.tag_configure("falta", underline=True)
+        try:
+            t.tag_configure("falta", underlinefg="#e5484d")     # subrayado rojo (Tk 8.6.6 o más nuevo)
+        except tk.TclError:
+            t.tag_configure("falta", foreground="#e5484d")
         t.tag_configure("oculto", elide=True)   # enlaces de imágenes: se ve la imagen, no el texto
+        t.tag_raise("simbolo")
+        t.tag_raise("vineta")
+        t.tag_raise("sel")
 
     PATRONES = [
         ("negrita", re.compile(r"\*\*[^*\n]+\*\*")),
@@ -424,27 +658,381 @@ class App(tk.Tk):
     def resaltar(self):
         """Colorea el Markdown del editor: títulos, negritas, citas, listas, marcas de tiempo."""
         t = self.texto
-        for tag in ("h1", "h2", "h3", "negrita", "cursiva", "codigo", "cita", "tiempo", "hecha", "vineta"):
+        quitar = ["h1", "h2", "h3", "simbolo", "negrita", "cursiva", "codigo", "cita", "tiempo", "hecha", "vineta",
+                  "regla", "bloque_codigo"]
+        quitar += ["bloque_" + b for b in self.colores["bloques"]]
+        quitar += [tag for tag in t.tag_names() if tag.startswith("colgante_")]
+        for tag in quitar:
             t.tag_remove(tag, "1.0", "end")
         lineas = t.get("1.0", "end-1c").split("\n")
         self.mostrar_imagenes(lineas)
+        en_codigo = False
         for n, linea in enumerate(lineas, start=1):
+            if linea.strip().startswith("```"):
+                en_codigo = not en_codigo
+                t.tag_add("bloque_codigo", f"{n}.0", f"{n}.end+1c")
+                continue
+            if en_codigo:
+                t.tag_add("bloque_codigo", f"{n}.0", f"{n}.end+1c")
+                continue
+            if not linea.strip() and n > 1 and re.match(r"#\s", lineas[n - 2]):
+                t.tag_add("regla", f"{n}.end", f"{n}.end+1c")       # raya bajo el título
+                continue
+            if re.fullmatch(r"\s*(-{3,}|\*{3,}|_{3,})\s*", linea):
+                t.tag_add("regla", f"{n}.0", f"{n}.end+1c")      # «---» casi invisible: queda la raya
+                continue
             if not linea:
                 continue
             m = re.match(r"(#{1,3})\s", linea)
             if m:
                 t.tag_add("h" + str(len(m.group(1))), f"{n}.0", f"{n}.end")
+                t.tag_add("simbolo", f"{n}.0", f"{n}.{m.end()}")
                 continue
-            if linea.startswith(">"):
-                t.tag_add("cita", f"{n}.0", f"{n}.end")
+            bloque = editor.tipo_bloque(linea)
+            if bloque:
+                t.tag_add("cita" if bloque == "cita" else "bloque_" + bloque, f"{n}.0", f"{n}.end+1c")
+                t.tag_add("simbolo", f"{n}.0", f"{n}.1")
             elif re.match(r"\s*[-*+]\s+\[[xX]\]", linea):
                 t.tag_add("hecha", f"{n}.0", f"{n}.end")
-            m = re.match(r"\s*([-*+]|\d+[.)])\s", linea)
-            if m:
-                t.tag_add("vineta", f"{n}.{m.start(1)}", f"{n}.{m.end(1)}")
+            item = editor.analizar(linea)
+            if item:
+                self._sangria_colgante(n, linea, item)
             for tag, patron in self.PATRONES:
                 for m in patron.finditer(linea):
                     t.tag_add(tag, f"{n}.{m.start()}", f"{n}.{m.end()}")
+                    if tag == "codigo":     # las comillas `…` más discretas, que destaque el comando
+                        t.tag_add("simbolo", f"{n}.{m.start()}", f"{n}.{m.start() + 1}")
+                        t.tag_add("simbolo", f"{n}.{m.end() - 1}", f"{n}.{m.end()}")
+        self._despues("ortografia", 700, self.subrayar_faltas)
+
+    # ---------- ortografía: español e inglés ----------
+    def _corrector(self):
+        if getattr(self, "_corr", None) is None:
+            self._corr = ortografia.Corrector()
+            for p in self.cfg.get("palabras_propias", []):
+                self._corr.ignorar(p)
+        return self._corr
+
+    def subrayar_faltas(self):
+        """Subraya en rojo las palabras mal escritas (si el corrector está encendido)."""
+        t = self.texto
+        t.tag_remove("falta", "1.0", "end")
+        if not self.cfg.get("ortografia", True) or not self.actual:
+            return
+        texto = t.get("1.0", "end-1c")
+        if len(texto) > 200_000:
+            return
+        for ini, fin, _p in self._faltas(texto):
+            t.tag_add("falta", ini, fin)
+
+    def _faltas(self, texto=None):
+        """Faltas del texto actual como (inicio, fin, palabra) en índices del editor."""
+        if texto is None:
+            texto = self.texto.get("1.0", "end-1c")
+        return [(f"{fila + 1}.{ini}", f"{fila + 1}.{fin}", p) for fila, ini, fin, p in
+                ortografia.faltas_en_texto(texto, self._corrector())]
+
+    def _cambiar_palabra(self, ini, fin, nueva):
+        t = self.texto
+        t.configure(autoseparators=False)        # un solo Ctrl+Z deshace el cambio
+        try:
+            t.edit_separator()
+            t.delete(ini, fin)
+            t.insert(ini, nueva)
+            t.edit_separator()
+        finally:
+            t.configure(autoseparators=True)
+        self.resaltar()
+
+    def _menu_texto(self, e):
+        t = self.texto
+        if not self._editable():
+            return None
+        m = tk.Menu(self, tearoff=False)
+        pos = t.index(f"@{e.x},{e.y}")
+        rango = t.tag_prevrange("falta", pos + "+1c")
+        if rango and t.compare(rango[0], "<=", pos) and t.compare(pos, "<", rango[1]):
+            ini, fin = rango
+            palabra = t.get(ini, fin)
+            sugerencias = self._corrector().sugerencias(palabra)
+            for sug in sugerencias:
+                m.add_command(label=sug, font=(LETRA, 10, "bold"),
+                              command=lambda sug=sug: self._cambiar_palabra(ini, fin, sug))
+            if not sugerencias:
+                m.add_command(label="(sin sugerencias)", state="disabled")
+            m.add_separator()
+            m.add_command(label=f"Añadir «{palabra}» a mi diccionario", command=lambda: self.palabra_propia(palabra))
+            m.add_separator()
+        m.add_command(label="Cortar", command=lambda: t.event_generate("<<Cut>>"))
+        m.add_command(label="Copiar", command=lambda: t.event_generate("<<Copy>>"))
+        m.add_command(label="Pegar", command=lambda: t.event_generate("<<Paste>>"))
+        m.add_separator()
+        m.add_command(label="Revisar ortografía…  (F7)", command=self.dialogo_ortografia)
+        m.add_checkbutton(label="Subrayar faltas mientras escribo", variable=self._var_ortografia(),
+                          command=self._alternar_ortografia)
+        m.tk_popup(e.x_root, e.y_root)
+        return "break"
+
+    def _var_ortografia(self):
+        if not hasattr(self, "_v_ort"):
+            self._v_ort = tk.BooleanVar(value=self.cfg.get("ortografia", True))
+        return self._v_ort
+
+    def _alternar_ortografia(self):
+        self.cfg["ortografia"] = bool(self._var_ortografia().get())
+        guardar_config(self.cfg)
+        self.subrayar_faltas()
+
+    def palabra_propia(self, palabra):
+        """La palabra deja de marcarse (se guarda en la configuración: nombres, términos técnicos…)."""
+        propias = self.cfg.setdefault("palabras_propias", [])
+        if palabra.lower() not in propias:
+            propias.append(palabra.lower())
+            guardar_config(self.cfg)
+        self._corrector().ignorar(palabra)
+        self.subrayar_faltas()
+
+    def dialogo_ortografia(self):
+        """«¿Quieres corregir estas palabras?»: lista de faltas con su sugerencia, y se corrigen de una vez."""
+        if not self._editable():
+            return
+        corr = self._corrector()
+        if not corr:
+            messagebox.showinfo("Ortografía", "No hay corrector disponible en este equipo.\n\n"
+                                "En Windows: Configuración → Hora e idioma → Idioma → añade Español o English.\n"
+                                "O instala el de respaldo: py -3 -m pip install pyspellchecker", parent=self)
+            return
+        faltas = self._faltas()
+        if not faltas:
+            messagebox.showinfo("Ortografía", "✓ No he encontrado faltas.", parent=self)
+            return
+        palabras = list(dict.fromkeys(p for _i, _f, p in faltas))
+        c = self.colores
+        v = self.ventana_ortografia = tk.Toplevel(self)
+        v.title("Ortografía")
+        v.transient(self)
+        v.configure(background=c["fondo"])
+        marco = ttk.Frame(v, padding=14)
+        marco.pack(fill="both", expand=True)
+        ttk.Label(marco, text="¿Quieres corregir estas palabras?", font=(LETRA, 13, "bold")).pack(anchor="w")
+        ttk.Label(marco, text="Marca las que quieras cambiar y elige cómo se escriben.   Idiomas: "
+                  + ", ".join(corr.idiomas), foreground=c["suave"]).pack(anchor="w", pady=(2, 10))
+        lienzo = tk.Canvas(marco, highlightthickness=0, background=c["fondo"])
+        filas = ttk.Frame(lienzo)
+        lienzo.create_window(0, 0, window=filas, anchor="nw")
+        elegidas = []
+        for i, p in enumerate(palabras):
+            sugerencias = corr.sugerencias(p)
+            # Marcada solo si la sugerencia se parece de verdad (si no, suele ser jerga: «wordlist», «rockyou»)
+            marcada = tk.BooleanVar(value=bool(sugerencias) and ortografia.parecida(p, sugerencias[0]))
+            cambio = tk.StringVar(value=sugerencias[0] if sugerencias else p)
+            veces = sum(1 for *_x, q in faltas if q == p)
+            ttk.Checkbutton(filas, variable=marcada, text=p + (f"  ×{veces}" if veces > 1 else "")).grid(
+                row=i, column=0, sticky="w", padx=(0, 10), pady=3)
+            ttk.Label(filas, text="→").grid(row=i, column=1)
+            ttk.Combobox(filas, textvariable=cambio, values=sugerencias, width=22).grid(row=i, column=2, padx=6, pady=3)
+            ttk.Button(filas, text="Es correcta",
+                       command=lambda p=p, m=marcada: (self.palabra_propia(p), m.set(False))).grid(row=i, column=3)
+            elegidas.append((p, marcada, cambio))
+        filas.update_idletasks()
+        alto = filas.winfo_reqheight()
+        lienzo.configure(width=filas.winfo_reqwidth(), height=min(alto, 400), scrollregion=(0, 0, 0, alto))
+        if alto > 400:
+            barra = ttk.Scrollbar(marco, command=lienzo.yview)
+            lienzo.configure(yscrollcommand=barra.set)
+            barra.pack(side="right", fill="y")
+            v.bind("<MouseWheel>", lambda e: lienzo.yview_scroll(-e.delta // 120, "units"))
+        lienzo.pack(side="top", fill="both", expand=True)
+
+        def corregir():
+            cambios = {p: c_.get().strip() for p, m, c_ in elegidas
+                       if m.get() and c_.get().strip() and c_.get().strip() != p}
+            t = self.texto
+            t.configure(autoseparators=False)    # todas las correcciones se deshacen con un solo Ctrl+Z
+            try:
+                t.edit_separator()
+                for ini, fin, p in reversed(self._faltas()):     # de atrás adelante: no se mueven las posiciones
+                    if p in cambios:
+                        t.delete(ini, fin)
+                        t.insert(ini, cambios[p])
+                t.edit_separator()
+            finally:
+                t.configure(autoseparators=True)
+            v.destroy()
+            self.resaltar()
+            self.estado.configure(text=f"✓ {len(cambios)} palabra(s) corregida(s). Ctrl+Z para deshacer.")
+
+        v.corregir = corregir
+        botones = ttk.Frame(marco)
+        botones.pack(fill="x", pady=(12, 0))
+        ttk.Button(botones, text="Corregir las marcadas", command=corregir).pack(side="right")
+        ttk.Button(botones, text="Ahora no", command=v.destroy).pack(side="right", padx=6)
+        v.bind("<Escape>", lambda e: v.destroy())
+        v.bind("<Return>", lambda e: corregir())
+        v.grab_set()
+        v.focus_set()
+
+    def _sangria_colgante(self, n, linea, item):
+        """Lista con sangría francesa: si el texto salta de línea, sigue alineado tras el número."""
+        t = self.texto
+        t.tag_add("vineta", f"{n}.{len(item.sangria)}", f"{n}.{item.ancho}")
+        izquierda = 18 + 14 * item.nivel
+        colgante = izquierda + self._fuente.measure(linea[:item.ancho])
+        nombre = f"colgante_{izquierda}_{colgante}"
+        t.tag_configure(nombre, lmargin1=izquierda, lmargin2=colgante)
+        t.tag_lower(nombre)
+        t.tag_add(nombre, f"{n}.0", f"{n}.end+1c")
+
+    # ---------- teclas del editor: listas, flechas, palabras ----------
+    def _posicion(self):
+        fila, col = map(int, self.texto.index("insert").split("."))
+        return fila, col
+
+    def _lineas(self):
+        return self.texto.get("1.0", "end-1c").split("\n")
+
+    def _aplicar(self, resultado):
+        """Pone en el editor las líneas que han cambiado (un solo paso de Ctrl+Z) y coloca el cursor."""
+        if not resultado:
+            return None
+        nuevas, fila, col = resultado
+        t, viejas = self.texto, self._lineas()
+        a = 0
+        while a < len(viejas) and a < len(nuevas) and viejas[a] == nuevas[a]:
+            a += 1
+        bv, bn = len(viejas) - 1, len(nuevas) - 1
+        while bv >= a and bn >= a and viejas[bv] == nuevas[bn]:
+            bv, bn = bv - 1, bn - 1
+        t.configure(autoseparators=False)
+        t.edit_separator()
+        try:
+            if bv < a:                                   # solo se añaden líneas
+                if bn >= a:
+                    if a < len(viejas):
+                        t.insert(f"{a + 1}.0", "\n".join(nuevas[a:bn + 1]) + "\n")
+                    else:
+                        t.insert("end-1c", "\n" + "\n".join(nuevas[a:bn + 1]))
+            elif bn < a:                                 # solo se quitan líneas
+                if bv + 1 < len(viejas):
+                    t.delete(f"{a + 1}.0", f"{bv + 2}.0")
+                else:
+                    t.delete(f"{a}.end" if a else "1.0", f"{bv + 1}.end")
+            else:
+                t.delete(f"{a + 1}.0", f"{bv + 1}.end")
+                t.insert(f"{a + 1}.0", "\n".join(nuevas[a:bn + 1]))
+        finally:
+            t.edit_separator()
+            t.configure(autoseparators=True)
+        t.mark_set("insert", f"{fila + 1}.{col}")
+        t.see("insert")
+        self._despues("resaltar", 30, self.resaltar)
+        return "break"
+
+    def _editable(self):
+        return self.actual is not None and str(self.texto.cget("state")) == "normal"
+
+    def _tecla_enter(self, _e=None):
+        if not self._editable() or self.texto.tag_ranges("sel"):
+            return None
+        fila, col = self._posicion()
+        return self._aplicar(editor.enter(self._lineas(), fila - 1, col))
+
+    def _tecla_tab(self, atras):
+        if not self._editable():
+            return "break"
+        fila, col = self._posicion()
+        r = self._aplicar(editor.tab(self._lineas(), fila - 1, col, atras=atras))
+        if r or atras:
+            return "break"   # Mayús+Tab fuera de una lista no salta a otro control
+        return None
+
+    def _tecla_retroceso(self, _e=None):
+        r = self._borrar_imagen(adelante=False)
+        if r or not self._editable() or self.texto.tag_ranges("sel"):
+            return r
+        fila, col = self._posicion()
+        lineas = self._lineas()
+        # Si este elemento acaba de subir de nivel con Retroceso (a. → 2.), el siguiente quita la viñeta
+        # en vez de volver a bajarlo: así no se queda dando vueltas.
+        sangrar = getattr(self, "_subido", None) != (fila, lineas[fila - 1])
+        res = editor.retroceso(lineas, fila - 1, col, sangrar=sangrar)
+        subio = res and len(res[0][fila - 1]) - len(res[0][fila - 1].lstrip()) < \
+            len(lineas[fila - 1]) - len(lineas[fila - 1].lstrip())
+        self._subido = (fila, res[0][fila - 1]) if subio else None
+        return self._aplicar(res)
+
+    def _tecla_espacio(self, _e=None):
+        """Flechas y símbolos al escribir (-> da →) y comandos de bloque (/idea)."""
+        t = self.texto
+        if not self._editable() or t.tag_ranges("sel") or not self.cfg.get("simbolos", True):
+            return None
+        fila, _ = self._posicion()
+        if editor.en_codigo(self._lineas(), fila - 1):
+            return None
+        cambio = editor.sustitucion(t.get(f"{fila}.0", "insert"))
+        if not cambio:
+            return None
+        quitar, poner = cambio
+        t.configure(autoseparators=False)
+        t.edit_separator()
+        t.delete(f"insert-{quitar}c", "insert")
+        t.insert("insert", poner if poner.endswith(" ") else poner + " ")
+        t.edit_separator()            # Ctrl+Z justo después devuelve lo que se escribió (->)
+        t.configure(autoseparators=True)
+        t.see("insert")
+        return "break"
+
+    def _borrar_palabra(self, adelante):
+        """Ctrl+Retroceso / Ctrl+Supr: borra la palabra entera, como en cualquier programa."""
+        t = self.texto
+        if not self._editable():
+            return "break"
+        if t.tag_ranges("sel"):
+            t.delete("sel.first", "sel.last")
+            return "break"
+        if self._borrar_imagen(adelante=adelante):
+            return "break"
+        fila, col = self._posicion()
+        linea = t.get(f"{fila}.0", f"{fila}.end")
+        if t.dump(f"{fila}.0", f"{fila}.end", image=True):     # línea con imagen: lo que haga Tk
+            desde, hasta = ("insert", "insert wordend") if adelante else ("insert-1c wordstart", "insert")
+        elif adelante:
+            fin = editor.palabra_derecha(linea, col)
+            desde, hasta = "insert", ("insert+1c" if fin is None else f"{fila}.{fin}")
+        else:
+            ini = editor.palabra_izquierda(linea, col)
+            desde, hasta = ("insert-1c" if ini is None else f"{fila}.{ini}"), "insert"
+        t.edit_separator()
+        t.delete(desde, hasta)
+        t.edit_separator()
+        return "break"
+
+    def _envolver(self, marca):
+        """Ctrl+B negrita / Ctrl+K cursiva: rodea la selección (o deja el cursor en medio)."""
+        t = self.texto
+        if not self._editable():
+            return "break"
+        if t.tag_ranges("sel"):
+            ini, fin = t.index("sel.first"), t.index("sel.last")
+            t.insert(fin, marca)
+            t.insert(ini, marca)
+        else:
+            t.insert("insert", marca * 2)
+            t.mark_set("insert", f"insert-{len(marca)}c")
+        return "break"
+
+    def insertar_bloque(self, texto):
+        """Inserta un bloque destacado (💡 idea, ⚠ ojo…) en la línea del cursor o debajo."""
+        if not self._editable():
+            messagebox.showinfo("Bloque", "Abre o crea una nota primero.")
+            return
+        t = self.texto
+        if t.get("insert linestart", "insert lineend").strip():
+            t.mark_set("insert", "insert lineend")
+            t.insert("insert", "\n")
+        t.insert("insert", texto)
+        t.focus_set()
+        self.resaltar()
 
     def _modificado(self, _e):
         if self.texto.edit_modified():
@@ -1413,6 +2001,7 @@ class App(tk.Tk):
         return hechas
 
     def cerrar(self):
+        self._mostrar_barras()
         self.parar_auto()
         self.guardar(silencioso=True)
         if self.compacto:
