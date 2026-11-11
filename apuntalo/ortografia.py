@@ -193,7 +193,8 @@ class Corrector:
         self._cache = {}
 
     def __bool__(self):
-        return bool(self.partes)
+        # Sin español no sirve: en un Windows solo en inglés marcaría todas las palabras de los apuntes
+        return any(p.idioma.startswith("es") for p in self.partes)
 
     @property
     def idiomas(self):

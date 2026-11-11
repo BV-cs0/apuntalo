@@ -798,8 +798,8 @@ class App(tk.Tk):
             return
         corr = self._corrector()
         if not corr:
-            messagebox.showinfo("Ortografía", "No hay corrector disponible en este equipo.\n\n"
-                                "En Windows: Configuración → Hora e idioma → Idioma → añade Español o English.\n"
+            messagebox.showinfo("Ortografía", "Falta el diccionario de español en este equipo.\n\n"
+                                "En Windows: Configuración → Hora e idioma → Idioma → añade Español.\n"
                                 "O instala el de respaldo: py -3 -m pip install pyspellchecker", parent=self)
             return
         faltas = self._faltas()

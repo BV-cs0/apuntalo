@@ -34,6 +34,11 @@ class TestPalabras(unittest.TestCase):
         self.assertFalse(o.parecida("wordlist", "mordiste"))
         self.assertFalse(o.parecida("rockyou", "lockout"))
 
+    def test_sin_espanol_el_corrector_se_apaga(self):
+        c = o.Corrector(idiomas=())
+        self.assertFalse(c)
+        self.assertEqual(o.faltas_en_texto("holaa", c), [])
+
     def test_mayusculas_de_la_sugerencia(self):
         self.assertEqual(o.igualar_mayusculas("Poodemos", "podemos"), "Podemos")
         self.assertEqual(o.igualar_mayusculas("HOLAA", "hola"), "HOLA")
@@ -41,7 +46,7 @@ class TestPalabras(unittest.TestCase):
     def test_corrector_real_si_lo_hay(self):
         c = o.Corrector()
         if not c:
-            self.skipTest("sin diccionarios en este equipo")
+            self.skipTest("sin diccionario de español en este equipo")
         self.assertTrue(c.correcta("hola"))
         self.assertFalse(c.correcta("generalemnte"))
         self.assertIn("generalmente", c.sugerencias("generalemnte"))
