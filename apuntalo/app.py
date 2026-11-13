@@ -359,23 +359,41 @@ class App(tk.Tk):
     def aplicar_opacidad(self, *_):
         self.attributes("-alpha", max(0.3, min(1.0, float(self.opacidad.get()))))
 
+    @staticmethod
+    def _geo_compacta_valida(geo):
+        """Un tamaño compacto que ocupa media pantalla no es compacto: se descarta."""
+        try:
+            ancho, alto = (int(n) for n in geo.split("+")[0].split("x"))
+        except (ValueError, AttributeError):
+            return False
+        return 200 <= ancho <= 900 and 200 <= alto <= 1000
+
     def alternar_compacto(self):
         if not self.compacto:
-            self.geo_normal = self.geometry()
+            if self.state() == "zoomed":
+                self.state("normal")          # una ventana maximizada no se deja encoger
+            else:
+                self.geo_normal = self.geometry()
             self.barra.pack_forget()
             self.fila_meta.pack_forget()
             self.panel.forget(self.izq)
             self.mini.pack(fill="x", before=self.panel)
+            if not self._geo_compacta_valida(self.geo_compacta):
+                self.geo_compacta = f"440x520+{self.winfo_screenwidth() - 480}+80"
             self.geometry(self.geo_compacta)
             if not self.encima.get():
                 self.alternar_encima()
         else:
-            self.geo_compacta = self.geometry()
+            if self.state() == "zoomed":
+                self.state("normal")
+            elif self._geo_compacta_valida(self.geometry()):
+                self.geo_compacta = self.geometry()
             self.mini.pack_forget()
             self.barra.pack(fill="x", before=self.panel)
             self.panel.insert(0, self.izq, weight=1)
             self.fila_meta.pack(fill="x", before=self.marco)
             self.geometry(self.geo_normal)
+            self.state("zoomed")              # al salir del modo compacto, pantalla completa
         self.compacto = not self.compacto
 
     def mostrar_ocultar(self):
@@ -2005,8 +2023,9 @@ class App(tk.Tk):
         self.parar_auto()
         self.guardar(silencioso=True)
         if self.compacto:
-            self.geo_compacta = self.geometry()
-        else:
+            if self.state() == "normal" and self._geo_compacta_valida(self.geometry()):
+                self.geo_compacta = self.geometry()
+        elif self.state() == "normal":
             self.geo_normal = self.geometry()
         self.cfg.update({"encima": self.encima.get(), "opacidad": round(float(self.opacidad.get()), 2),
                          "compacto": self.compacto, "geo_normal": self.geo_normal,
