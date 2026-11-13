@@ -142,7 +142,7 @@ Para generar el `.exe`: `py -3 -m pip install -r requirements.txt` y después ej
 
 1. Sube el número en `apuntalo/__init__.py` (`__version__`).
 2. Crea una *Release* en GitHub con la etiqueta `vX.Y.Z` y adjunta el `Apuntalo.exe` nuevo.
-3. Para subirlo a PyPI: *Actions* → **Publicar en PyPI** → *Run workflow* (`.github/workflows/publicar.yml`). Usa *Trusted Publishing*, sin contraseñas ni tokens. PyPI no deja volver a subir un número de versión que ya existe.
+3. Al publicar la *Release*, GitHub Actions sube la versión a PyPI solo (`.github/workflows/publicar.yml`). Usa *Trusted Publishing*, sin contraseñas ni tokens. También se puede lanzar a mano: *Actions* → **Publicar en PyPI** → *Run workflow*. PyPI no deja volver a subir un número de versión que ya existe: si ya está, el workflow se la salta.
 
 ## Qué probar (lista para la versión 1.1)
 
