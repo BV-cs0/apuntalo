@@ -200,7 +200,9 @@ class App(tk.Tk):
         self.encima = tk.BooleanVar(value=self.cfg.get("encima", False))
         self.opacidad = tk.DoubleVar(value=self.cfg.get("opacidad", 1.0))
         self.compacto = False
-        self.geo_normal = self.cfg.get("geo_normal", "1250x720")
+        self.geo_normal = self.cfg.get("geo_normal")
+        if not self._geo_normal_valida(self.geo_normal):
+            self.geo_normal = "1250x720"
         self.geo_compacta = self.cfg.get("geo_compacta", "440x520")
         self.tam_letra = int(self.cfg.get("tam_letra", 12))
         self.oscuro = bool(self.cfg.get("oscuro", False))
@@ -368,11 +370,20 @@ class App(tk.Tk):
             return False
         return 200 <= ancho <= 900 and 200 <= alto <= 1000
 
+    @staticmethod
+    def _geo_normal_valida(geo):
+        """Un tamaño normal diminuto (1x1 de una ventana aún sin dibujar) no sirve: se descarta."""
+        try:
+            ancho, alto = (int(n) for n in geo.split("+")[0].split("x"))
+        except (ValueError, AttributeError):
+            return False
+        return ancho >= 600 and alto >= 400
+
     def alternar_compacto(self):
         if not self.compacto:
             if self.state() == "zoomed":
                 self.state("normal")          # una ventana maximizada no se deja encoger
-            else:
+            elif self._geo_normal_valida(self.geometry()):
                 self.geo_normal = self.geometry()
             self.barra.pack_forget()
             self.fila_meta.pack_forget()
@@ -2292,7 +2303,7 @@ class App(tk.Tk):
         if self.compacto:
             if self.state() == "normal" and self._geo_compacta_valida(self.geometry()):
                 self.geo_compacta = self.geometry()
-        elif self.state() == "normal":
+        elif self.state() == "normal" and self._geo_normal_valida(self.geometry()):
             self.geo_normal = self.geometry()
         self.cfg.update({"encima": self.encima.get(), "opacidad": round(float(self.opacidad.get()), 2),
                          "compacto": self.compacto, "geo_normal": self.geo_normal,

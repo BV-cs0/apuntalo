@@ -359,6 +359,14 @@ def tk_error():
     return ap.tk.TclError
 
 
+class TestGeometria(unittest.TestCase):
+    def test_geo_normal_valida(self):
+        for geo in ("1x1+-16+18", "1x1+0+0", "599x720", "600x399", "basura", None):
+            self.assertFalse(ap.App._geo_normal_valida(geo), geo)
+        for geo in ("1250x720+10+10", "1250x720", "600x400"):
+            self.assertTrue(ap.App._geo_normal_valida(geo), geo)
+
+
 class TestVentana(TemporalMixin, unittest.TestCase):
     """Prueba de humo de la interfaz (se salta si no hay pantalla)."""
 
@@ -373,6 +381,34 @@ class TestVentana(TemporalMixin, unittest.TestCase):
     def tearDown(self):
         self.app.cerrar()
         super().tearDown()
+
+    def _otra_app(self):
+        """Una ventana más; Tcl a veces no arranca en Windows y entonces se salta, como en setUp."""
+        try:
+            return ap.App()
+        except Exception as e:  # noqa: BLE001
+            self.skipTest(f"Sin pantalla: {e}")
+
+    def test_descarta_geo_normal_diminuta_al_arrancar(self):
+        for compacto in (False, True):
+            with self.subTest(compacto=compacto):
+                ap.guardar_config({"geo_normal": "1x1+-16+18", "compacto": compacto})
+                app = self._otra_app()
+                try:
+                    self.assertEqual(app.geo_normal, "1250x720")
+                    self.assertEqual(app.compacto, compacto)
+                finally:
+                    app.destroy()
+
+    def test_alternar_compacto_antes_de_dibujar_conserva_geo_normal(self):
+        app = self._otra_app()
+        try:
+            self.assertFalse(app.winfo_ismapped())
+            app.alternar_compacto()
+            app.alternar_compacto()
+            self.assertTrue(ap.App._geo_normal_valida(app.geo_normal))
+        finally:
+            app.destroy()
 
     def test_crear_buscar_y_resaltar(self):
         from unittest import mock
