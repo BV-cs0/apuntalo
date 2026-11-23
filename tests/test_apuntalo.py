@@ -3,13 +3,14 @@ import sys
 import tempfile
 import unittest
 import xml.dom.minidom
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
-from apuntalo import app as ap, exportar  # noqa: E402
+from apuntalo import app as ap, editor, exportar, mapa  # noqa: E402
 
 
 class TemporalMixin:
@@ -359,6 +360,56 @@ def tk_error():
     return ap.tk.TclError
 
 
+class TestTablas(unittest.TestCase):
+    def test_alinear_tabla(self):
+        lineas = ["Antes", "| Nombre| Nota |", "| ---|:---: |", "| Ana |", "Después"]
+        alineadas = ["Antes", "| Nombre | Nota  |", "| ------ | :---: |", "| Ana    |       |", "Después"]
+        self.assertEqual(editor.alinear_tabla(lineas, 1, 11), (alineadas, 1, 12))
+        self.assertEqual(editor.alinear_tabla(alineadas, 1, 12), (alineadas, 1, 12))
+        self.assertEqual(editor.alinear_tabla(alineadas, 1, 16), (alineadas, 1, 15))
+        self.assertIsNone(editor.alinear_tabla(lineas, 0, 0))
+        self.assertIsNone(editor.alinear_tabla(["```", *lineas, "```"], 2, 2))
+
+    def test_tab_y_enter_alinean(self):
+        lineas = ["| Nombre|Nota|", "| --- | --- |", "| Ana | |", "Después"]
+        alineadas = ["| Nombre | Nota |", "| ------ | ---- |", "| Ana    |      |", "Después"]
+        self.assertEqual(editor.tabla_tab(lineas, 0, 2), (alineadas, 0, 11))
+        self.assertEqual(editor.tabla_tab(lineas, 2, 2), (alineadas, 2, 11))
+        self.assertEqual(editor.tabla_tab(lineas, 2, 2, atras=True), (alineadas, 0, 11))
+        self.assertEqual(editor.tabla_tab(lineas, 0, 2, atras=True), (alineadas, 0, 2))
+        self.assertEqual(editor.tabla_enter(lineas, 0, 2), (alineadas, 2, 2))
+        con_fila = alineadas[:3] + ["|        |      |", "Después"]
+        self.assertEqual(editor.tabla_enter(lineas, 2, 2), (con_fila, 3, 2))
+        self.assertEqual(editor.tabla_tab(lineas, 2, 9), (con_fila, 3, 2))
+        self.assertEqual(editor.tabla_tab(lineas, 0, 2, alinear=False), (lineas, 0, 9))
+        self.assertEqual(editor.tabla_enter(lineas, 2, 2, alinear=False),
+                         (lineas[:3] + ["| | |", "Después"], 3, 2))
+
+    def test_conserva_barra_escapada(self):
+        lineas = [r"| a\|b|x|", "| --- | --- |"]
+        self.assertEqual(editor.alinear_tabla(lineas, 0, 2),
+                         ([r"| a\|b | x   |", "| ---- | --- |"], 0, 2))
+
+
+class TestMapa(unittest.TestCase):
+    def test_svg_del_mapa_completo(self):
+        nodo = mapa.Nodo("A & B\n< C", [mapa.Nodo("Hijo"), mapa.Nodo("Otro hijo")])
+        cajas, ancho, alto = mapa.disponer([nodo])
+        colores = {"acento": "#123456", "acento_suave": "#abcdef", "texto": "#111111", "hoja": "#ffffff"}
+        svg = mapa.a_svg(cajas, ancho, alto, 220, 46, colores, str.splitlines)
+        raiz = ET.fromstring(svg)
+        ns = {"svg": "http://www.w3.org/2000/svg"}
+        self.assertEqual(raiz.get("viewBox"), f"0 0 {ancho} {alto}")
+        self.assertEqual(len(raiz.findall("svg:rect", ns)), 3)
+        flechas = raiz.findall("svg:line", ns)
+        self.assertEqual(len(flechas), 2)
+        self.assertTrue(all(flecha.get("marker-end") == "url(#flecha)" for flecha in flechas))
+        self.assertIsNotNone(raiz.find("svg:defs/svg:marker", ns))
+        self.assertEqual([t.text for t in raiz.findall("svg:text/svg:tspan", ns)][:2], ["A & B", "< C"])
+        self.assertIn("A &amp; B", svg)
+        self.assertIn("&lt; C", svg)
+
+
 class TestGeometria(unittest.TestCase):
     def test_geo_normal_valida(self):
         for geo in ("1x1+-16+18", "1x1+0+0", "599x720", "600x399", "basura", None):
@@ -509,7 +560,28 @@ class TestVentana(TemporalMixin, unittest.TestCase):
         self.assertEqual(t.index("insert"), "3.2")
         self.assertEqual(self.app._tecla_enter(), "break")
         self.assertEqual(t.index("insert"), "4.2")
-        self.assertEqual(t.get("1.0", "end-1c"), cuerpo + "\n| | |")
+        self.assertEqual(t.get("1.0", "end-1c"),
+                         "| Nombre | Nota |\n| ------ | ---- |\n| Ana    | 9    |\n|        |      |")
+        t.edit_undo()
+        self.assertEqual(t.get("1.0", "end-1c"), "| Nombre | Nota |\n| ------ | ---- |\n| Ana    | 9    |")
+        t.edit_undo()
+        self.assertEqual(t.get("1.0", "end-1c"), cuerpo)
+
+    def test_resaltar_tablas(self):
+        cuerpo = "| **Nombre** |\n| --- |\n| ~~Ana~~ |\n```\n| código |\n```"
+        ruta = ap.NOTAS / "Tabla.md"
+        ap.escribir_nota(ruta, "Tabla", [], "2026-11-09 10:00", cuerpo)
+        self.app.cargar(ruta)
+        t = self.app.texto
+        self.app.cfg["alinear_tablas"] = False
+        self.app.resaltar()
+        self.assertIn("tabla", t.tag_names("3.2"))
+        self.assertIn("tabla_cabecera", t.tag_names("1.2"))
+        self.assertNotIn("negrita", t.tag_names("1.2"))
+        self.assertIn("tabla_raya", t.tag_names("2.2"))
+        self.assertIn("simbolo", t.tag_names("2.0"))
+        self.assertIn("tachado", t.tag_names("3.2"))
+        self.assertNotIn("tabla", t.tag_names("5.2"))
 
     def test_insertar_tabla_se_deshace_en_un_paso(self):
         from unittest import mock
@@ -522,14 +594,14 @@ class TestVentana(TemporalMixin, unittest.TestCase):
         with mock.patch.object(ap.simpledialog, "askinteger", side_effect=[2, 3]):
             self.app.insertar_tabla()
         self.assertEqual(t.get("1.0", "end-1c"),
-                         "Antes\n\n| | |\n| --- | --- |\n| | |\n| | |\n\nDespués")
+                         "Antes\n\n|     |     |\n| --- | --- |\n|     |     |\n|     |     |\n\nDespués")
         self.assertEqual(t.index("insert"), "3.2")
         t.edit_undo()
         self.assertEqual(t.get("1.0", "end-1c"), cuerpo)
         with mock.patch.object(ap.simpledialog, "askinteger", side_effect=[1, 1]):
             t.mark_set("insert", "2.end")
             self.app.insertar_tabla()
-        self.assertEqual(t.get("1.0", "end-1c"), cuerpo + "\n\n| |\n")
+        self.assertEqual(t.get("1.0", "end-1c"), cuerpo + "\n\n|     |\n")
         self.assertEqual(t.index("insert"), "4.2")
 
     def test_listas_flechas_y_palabras(self):

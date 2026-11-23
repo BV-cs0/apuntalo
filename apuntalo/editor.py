@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 
 SANGRIA = "  "   # un nivel de lista (el mismo que usan importar y exportar)
-RE_FILA_TABLA = re.compile(r"\|.*\|\s*$")
+RE_FILA_TABLA = re.compile(r"\|(?:\\.|[^\\\n])*\|\s*$")
 
 # La comilla simple se usa como apóstrofo, * _ ~ tienen atajos de Markdown
 # y la tilde invertida es una tecla muerta en teclados españoles.
@@ -315,7 +315,7 @@ def retroceso(lineas, fila, col, sangrar=True):
 # ---------- tablas ----------
 def _celdas(linea):
     """Pares (inicio, fin) del texto entre barras: «| a | b |» → [(1, 4), (5, 8)]."""
-    barras = [i for i, c in enumerate(linea) if c == "|"]
+    barras = [m.start() for m in re.finditer(r"\\.|\|", linea) if m.group() == "|"]
     return [(izq + 1, der) for izq, der in zip(barras, barras[1:])]
 
 
@@ -324,21 +324,80 @@ def _separador_tabla(linea, celdas):
     return all(re.fullmatch(r":?-+:?", linea[ini:fin].strip()) for ini, fin in celdas)
 
 
+def es_separador_tabla(linea):
+    """Reconoce una fila separadora de tabla Markdown."""
+    return RE_FILA_TABLA.match(linea) is not None and _separador_tabla(linea, _celdas(linea))
+
+
+def _fila_tabla(textos, anchos):
+    return "| " + " | ".join(texto.ljust(ancho) for texto, ancho in zip(textos, anchos)) + " |"
+
+
 def _inicio_celda(linea, celda):
     ini, fin = celda
     texto = linea[ini:fin]
+    if not texto.strip():
+        return min(ini + 1, fin)
     return fin - len(texto.lstrip())
 
 
-def _mover_tabla(lineas, fila, col, atras, cambiar_fila):
-    if not RE_FILA_TABLA.match(lineas[fila]) or en_codigo(lineas, fila):
+def _indice_celda(celdas, col):
+    return next((i for i, (_, fin) in enumerate(celdas) if col <= fin), len(celdas) - 1)
+
+
+def alinear_tabla(lineas, fila, col):
+    """Alinea la tabla del cursor y conserva su posición relativa dentro de la celda."""
+    if not 0 <= fila < len(lineas) or not RE_FILA_TABLA.match(lineas[fila]) or en_codigo(lineas, fila):
         return None
+    primera, ultima = fila, fila + 1
+    while primera > 0 and RE_FILA_TABLA.match(lineas[primera - 1]):
+        primera -= 1
+    while ultima < len(lineas) and RE_FILA_TABLA.match(lineas[ultima]):
+        ultima += 1
+
+    filas = [[linea[ini:fin].strip() for ini, fin in _celdas(linea)]
+             for linea in lineas[primera:ultima]]
+    columnas = max(map(len, filas))
+    anchos = [3] * columnas
+    for textos in filas:
+        for i, texto in enumerate(textos):
+            anchos[i] = max(anchos[i], len(texto))
+
+    celdas = _celdas(lineas[fila])
+    indice = _indice_celda(celdas, col)
+    desplazamiento = max(0, col - _inicio_celda(lineas[fila], celdas[indice]))
+    alineadas = []
+    for linea, textos in zip(lineas[primera:ultima], filas):
+        textos += [""] * (columnas - len(textos))
+        if es_separador_tabla(linea):
+            for i, texto in enumerate(textos):
+                izquierda = ":" if texto.startswith(":") else ""
+                derecha = ":" if texto.endswith(":") else ""
+                textos[i] = izquierda + "-" * (anchos[i] - len(izquierda) - len(derecha)) + derecha
+        alineadas.append(_fila_tabla(textos, anchos))
+
+    linea = alineadas[fila - primera]
+    inicio = _inicio_celda(linea, _celdas(linea)[indice])
+    col = inicio + min(desplazamiento, len(filas[fila - primera][indice]))
+    return lineas[:primera] + alineadas + lineas[ultima:], fila, col
+
+
+def _mover_tabla(lineas, fila, col, atras, cambiar_fila, alinear):
+    if alinear:
+        resultado = alinear_tabla(lineas, fila, col)
+        if resultado is None:
+            return None
+        lineas, fila, col = resultado
+    elif not 0 <= fila < len(lineas) or not RE_FILA_TABLA.match(lineas[fila]) or en_codigo(lineas, fila):
+        return None
+    origen = fila
     linea = lineas[fila]
     celdas = _celdas(linea)
     columnas = len(celdas)
+    anchos = [fin - ini - 2 for ini, fin in celdas] if alinear else None
     paso = -1 if atras else 1
     if not cambiar_fila and not _separador_tabla(linea, celdas):
-        actual = next((i for i, (_, fin) in enumerate(celdas) if col <= fin), len(celdas) - 1)
+        actual = _indice_celda(celdas, col)
         destino = actual + paso
         if 0 <= destino < len(celdas):
             return lineas, fila, _inicio_celda(linea, celdas[destino])
@@ -351,24 +410,24 @@ def _mover_tabla(lineas, fila, col, atras, cambiar_fila):
             return lineas, fila, _inicio_celda(linea, celdas[-1 if atras else 0])
         fila += paso
     if atras:
-        return None
-    nueva = "| " * columnas + "|"
+        return (lineas, origen, col) if alinear else None
+    nueva = _fila_tabla([""] * columnas, anchos) if alinear else "| " * columnas + "|"
     return lineas[:fila] + [nueva] + lineas[fila:], fila, 2
 
 
-def tabla_tab(lineas, fila, col, atras=False):
+def tabla_tab(lineas, fila, col, atras=False, alinear=True):
     """Tab / Mayús+Tab en una tabla: pasa a la celda siguiente / anterior.
 
     En «| a | b |», Tab desde «a» lleva a «b». Desde «b» pasa a la fila siguiente
-    o añade «| | |» si está al final. Devuelve (líneas, fila, columna), o None."""
-    return _mover_tabla(lineas, fila, col, atras, cambiar_fila=False)
+    o añade una fila vacía al final. Devuelve (líneas, fila, columna), o None."""
+    return _mover_tabla(lineas, fila, col, atras, cambiar_fila=False, alinear=alinear)
 
 
-def tabla_enter(lineas, fila, col):
+def tabla_enter(lineas, fila, col, alinear=True):
     """Enter en «| a | b |» lleva a la primera celda de la fila siguiente, incluso desde «a».
 
     Si está al final añade una fila. Devuelve (líneas, fila, columna), o None fuera de una tabla."""
-    return _mover_tabla(lineas, fila, col, atras=False, cambiar_fila=True)
+    return _mover_tabla(lineas, fila, col, atras=False, cambiar_fila=True, alinear=alinear)
 
 
 # ---------- palabras ----------

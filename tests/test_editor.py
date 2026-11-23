@@ -29,22 +29,22 @@ class TestMarcas(unittest.TestCase):
 
 def test_tabla_tab_avanza_y_salta_el_separador():
     lineas = ["| Nombre | Nota |", "| :--- | ---: |", "| Ana | 9 |"]
-    assert ed.tabla_tab(lineas, 0, 4) == (lineas, 0, 11)
-    assert ed.tabla_tab(lineas, 0, 13) == (lineas, 2, 2)
-    assert ed.tabla_tab(lineas, 1, 3) == (lineas, 2, 2)
+    assert ed.tabla_tab(lineas, 0, 4, alinear=False) == (lineas, 0, 11)
+    assert ed.tabla_tab(lineas, 0, 13, alinear=False) == (lineas, 2, 2)
+    assert ed.tabla_tab(lineas, 1, 3, alinear=False) == (lineas, 2, 2)
 
 
 def test_tabla_mayus_tab_retrocede_y_salta_el_separador():
     lineas = ["| Nombre | Nota |", "| --- | --- |", "| Ana | 9 |"]
-    assert ed.tabla_tab(lineas, 2, 8, atras=True) == (lineas, 2, 2)
-    assert ed.tabla_tab(lineas, 2, 2, atras=True) == (lineas, 0, 11)
-    assert ed.tabla_tab(lineas, 1, 3, atras=True) == (lineas, 0, 11)
-    assert ed.tabla_tab(lineas, 0, 2, atras=True) is None
+    assert ed.tabla_tab(lineas, 2, 8, atras=True, alinear=False) == (lineas, 2, 2)
+    assert ed.tabla_tab(lineas, 2, 2, atras=True, alinear=False) == (lineas, 0, 11)
+    assert ed.tabla_tab(lineas, 1, 3, atras=True, alinear=False) == (lineas, 0, 11)
+    assert ed.tabla_tab(lineas, 0, 2, atras=True, alinear=False) is None
 
 
 def test_tabla_tab_anade_una_fila_antes_del_texto():
     lineas = ["| Ana | 9 |", "Texto"]
-    nuevas, fila, col = ed.tabla_tab(lineas, 0, 8)
+    nuevas, fila, col = ed.tabla_tab(lineas, 0, 8, alinear=False)
     assert nuevas == ["| Ana | 9 |", "| | |", "Texto"]
     assert (fila, col) == (1, 2)
     assert lineas == ["| Ana | 9 |", "Texto"]
@@ -52,9 +52,9 @@ def test_tabla_tab_anade_una_fila_antes_del_texto():
 
 def test_tabla_enter_pasa_a_la_primera_celda_o_anade_fila():
     lineas = ["| Nombre | Nota |", "| --- | --- |", "| Ana | 9 |"]
-    assert ed.tabla_enter(lineas, 0, 3) == (lineas, 2, 2)
-    assert ed.tabla_enter(lineas, 0, 13) == (lineas, 2, 2)
-    assert ed.tabla_enter(lineas, 2, 3) == (lineas + ["| | |"], 3, 2)
+    assert ed.tabla_enter(lineas, 0, 3, alinear=False) == (lineas, 2, 2)
+    assert ed.tabla_enter(lineas, 0, 13, alinear=False) == (lineas, 2, 2)
+    assert ed.tabla_enter(lineas, 2, 3, alinear=False) == (lineas + ["| | |"], 3, 2)
 
 
 def test_teclas_de_tabla_fuera_de_una_tabla_y_en_codigo():

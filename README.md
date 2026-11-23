@@ -30,7 +30,7 @@
   - **Texto sin formato (.txt)**.
 - **📥 Importar**: trae tus apuntes de Word (.docx), LibreOffice (.odt), páginas web (.html), Markdown (.md) o texto (.txt) para seguir editándolos aquí. Conserva títulos, negritas, cursivas, listas, tablas e imágenes.
 - **🖼 Imágenes con Ctrl+V**: haz un recorte con Win+Shift+S (o copia una imagen) y pégalo en el apunte. En el editor se ve solo la imagen, y sale también al exportar. Para quitarla, pulsa Retroceso justo detrás de ella.
-- **▦ Tablas y 🗺 mapa mental**: inserta tablas que se recorren con Tab y salen como tablas de verdad al exportar, y convierte los títulos y listas del apunte en un mapa mental.
+- **▦ Tablas y 🗺 mapa mental**: inserta tablas que se ven alineadas en el editor, se recorren con Tab y salen como tablas de verdad al exportar. Convierte los títulos y listas del apunte en un mapa mental que se guarda entero como imagen SVG (o PNG, con Pillow).
 - **⏱ Marcas de tiempo, ▶ cronómetro y 📎 adjuntar capturas o PDF.**
 
 ## Instalar
@@ -88,7 +88,7 @@ Descarga el código y abre **`Abrir apuntes.bat`** con clic derecho → *Ejecuta
 | Mayús+Supr | Borrar la palabra a la derecha (o cortar la selección, según el ajuste del clic derecho) |
 | Ctrl+B / Ctrl+K / Ctrl+Mayús+X | **Negrita** / *cursiva* / ~~tachado~~ (con texto seleccionado lo envuelve) |
 | `(` `[` `{` `"` `¿` `¡` `«` | Se cierran solos con el cursor en medio. Al escribir el cierre se lo salta, y Retroceso en un par vacío borra los dos |
-| Tab / Enter en una tabla | Celda siguiente / primera celda de la fila siguiente; al final añade una fila nueva (botón ▦ Tabla) |
+| Tab / Enter en una tabla | Celda siguiente / primera celda de la fila siguiente; al final añade una fila nueva y alinea las columnas (botón ▦ Tabla) |
 | Enter en una lista | Siguiente elemento (`1.` → `2.`, `a.` → `b.`). En un elemento vacío, termina la lista |
 | Tab / Mayús+Tab | Bajar o subir un nivel de la lista (`1.` → `a.` → `i.`) |
 | Retroceso tras la viñeta | En `2.` vacío pasa a `a.`; en `a.` vuelve al número; otra vez, quita la viñeta |

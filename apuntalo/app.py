@@ -666,6 +666,9 @@ class App(tk.Tk):
         t.tag_configure("tachado", overstrike=True)
         t.tag_configure("codigo", font=(MONO, n - 1), background=c["acento_suave"], foreground=c["titulo"])
         t.tag_configure("bloque_codigo", font=(MONO, n - 1), background=c["codigo"], lmargin1=12, lmargin2=12)
+        t.tag_configure("tabla", font=(MONO, n - 1), background=c["codigo"], lmargin1=12, lmargin2=12)
+        t.tag_configure("tabla_cabecera", font=(MONO, n - 1, "bold"))
+        t.tag_configure("tabla_raya", foreground=c["suave"])
         t.tag_configure("tiempo", foreground=c["acento"])
         t.tag_configure("hecha", foreground=c["suave"], overstrike=True)
         t.tag_configure("vineta", foreground=c["acento"], font=(LETRA, n, "bold"))
@@ -695,7 +698,7 @@ class App(tk.Tk):
         """Colorea el Markdown del editor: títulos, negritas, citas, listas, marcas de tiempo."""
         t = self.texto
         quitar = ["h1", "h2", "h3", "simbolo", "negrita", "cursiva", "tachado", "codigo", "cita", "tiempo", "hecha",
-                  "vineta", "regla", "bloque_codigo"]
+                  "vineta", "regla", "bloque_codigo", "tabla", "tabla_cabecera", "tabla_raya"]
         quitar += ["bloque_" + b for b in self.colores["bloques"]]
         quitar += [tag for tag in t.tag_names() if tag.startswith("colgante_")]
         for tag in quitar:
@@ -710,6 +713,19 @@ class App(tk.Tk):
                 continue
             if en_codigo:
                 t.tag_add("bloque_codigo", f"{n}.0", f"{n}.end+1c")
+                continue
+            if editor.RE_FILA_TABLA.match(linea):
+                t.tag_add("tabla", f"{n}.0", f"{n}.end+1c")
+                if editor.es_separador_tabla(linea):
+                    t.tag_add("tabla_raya", f"{n}.0", f"{n}.end+1c")
+                elif n < len(lineas) and editor.es_separador_tabla(lineas[n]):
+                    t.tag_add("tabla_cabecera", f"{n}.0", f"{n}.end+1c")
+                for barra in re.finditer(r"\|", linea):
+                    t.tag_add("simbolo", f"{n}.{barra.start()}", f"{n}.{barra.end()}")
+                for tag, patron in self.PATRONES:
+                    if tag in {"tachado", "tiempo"}:
+                        for m in patron.finditer(linea):
+                            t.tag_add(tag, f"{n}.{m.start()}", f"{n}.{m.end()}")
                 continue
             if not linea.strip() and n > 1 and re.match(r"#\s", lineas[n - 2]):
                 t.tag_add("regla", f"{n}.end", f"{n}.end+1c")       # raya bajo el título
@@ -814,6 +830,8 @@ class App(tk.Tk):
                           variable=self._var_mayusculas_auto(), command=self._alternar_mayusculas_auto)
         m.add_checkbutton(label="Cerrar paréntesis y comillas automáticamente",
                           variable=self._var_cierre_automatico(), command=self._alternar_cierre_automatico)
+        m.add_checkbutton(label="Alinear tablas automáticamente",
+                          variable=self._var_alinear_tablas(), command=self._alternar_alinear_tablas)
         m.tk_popup(e.x_root, e.y_root)
         return "break"
 
@@ -852,6 +870,15 @@ class App(tk.Tk):
 
     def _alternar_cierre_automatico(self):
         self.cfg["cierre_automatico"] = bool(self._var_cierre_automatico().get())
+        guardar_config(self.cfg)
+
+    def _var_alinear_tablas(self):
+        if not hasattr(self, "_v_alinear_tablas"):
+            self._v_alinear_tablas = tk.BooleanVar(value=self.cfg.get("alinear_tablas", True))
+        return self._v_alinear_tablas
+
+    def _alternar_alinear_tablas(self):
+        self.cfg["alinear_tablas"] = self._var_alinear_tablas().get()
         guardar_config(self.cfg)
 
     def _var_mayus_supr_corta(self):
@@ -1018,7 +1045,7 @@ class App(tk.Tk):
         lineas = self._lineas()
         resultado = editor.enter(lineas, fila - 1, col)
         if resultado is None:
-            resultado = editor.tabla_enter(lineas, fila - 1, col)
+            resultado = editor.tabla_enter(lineas, fila - 1, col, alinear=self.cfg.get("alinear_tablas", True))
         return self._aplicar(resultado)
 
     def _tecla_tab(self, atras):
@@ -1028,7 +1055,8 @@ class App(tk.Tk):
         lineas = self._lineas()
         resultado = editor.tab(lineas, fila - 1, col, atras=atras)
         if resultado is None:
-            resultado = editor.tabla_tab(lineas, fila - 1, col, atras=atras)
+            resultado = editor.tabla_tab(lineas, fila - 1, col, atras=atras,
+                                         alinear=self.cfg.get("alinear_tablas", True))
         r = self._aplicar(resultado)
         if r or atras:
             return "break"   # Mayús+Tab fuera de una lista no salta a otro control
@@ -1220,7 +1248,7 @@ class App(tk.Tk):
                                        parent=self, initialvalue=3, minvalue=1)
         if filas is None:
             return
-        vacia = "| " * columnas + "|"
+        vacia = "| " + " | ".join([" " * 3] * columnas) + " |"
         tabla = [vacia]
         if filas > 1:
             tabla += ["| " + " | ".join(["---"] * columnas) + " |"] + [vacia] * (filas - 1)
@@ -2089,23 +2117,38 @@ class App(tk.Tk):
             lienzo.tag_raise(rotulo)
 
         def guardar_imagen():
-            try:
-                from PIL import ImageGrab
-            except ImportError:
-                messagebox.showerror("Mapa mental", "Falta el paquete 'Pillow' (py -3 -m pip install Pillow).",
-                                     parent=v)
-                return
             destino = filedialog.asksaveasfilename(parent=v, title="Guardar como imagen",
-                                                    initialfile=titulo + ".png", defaultextension=".png",
-                                                    filetypes=[("Imagen PNG", "*.png")])
+                                                    initialfile=titulo + ".svg", defaultextension=".svg",
+                                                    filetypes=[("Imagen SVG", "*.svg"), ("Imagen PNG", "*.png")])
             if not destino:
                 return
-            v.lift()
-            v.update_idletasks()
-            x, y = lienzo.winfo_rootx(), lienzo.winfo_rooty()
             try:
-                # Solo se captura la parte visible del mapa.
-                ImageGrab.grab(bbox=(x, y, x + lienzo.winfo_width(), y + lienzo.winfo_height())).save(destino)
+                if Path(destino).suffix.lower() == ".png":
+                    from PIL import ImageGrab
+                    v.lift()
+                    v.update_idletasks()
+                    x, y = lienzo.winfo_rootx(), lienzo.winfo_rooty()
+                    ImageGrab.grab(bbox=(x, y, x + lienzo.winfo_width(), y + lienzo.winfo_height())).save(destino)
+                else:
+                    fuente = tkfont.Font(root=v, font=(LETRA, 10))
+
+                    def partir(texto):
+                        lineas = []
+                        linea = ""
+                        for palabra in texto.split():
+                            candidata = f"{linea} {palabra}" if linea else palabra
+                            if linea and fuente.measure(candidata) > ancho_col - 20:
+                                lineas.append(linea)
+                                linea = palabra
+                            else:
+                                linea = candidata
+                        return lineas + [linea]
+
+                    svg = mapa.a_svg(cajas, ancho, alto, ancho_col, alto_fila, c, partir, letra=LETRA)
+                    Path(destino).write_text(svg, encoding="utf-8")
+            except ImportError:
+                messagebox.showerror("Mapa mental", "Falta el paquete 'Pillow'. Guarda el mapa como SVG, "
+                                     "que no necesita instalar nada.", parent=v)
             except OSError as e:
                 messagebox.showerror("Mapa mental", f"No se pudo guardar la imagen:\n{e}", parent=v)
 
