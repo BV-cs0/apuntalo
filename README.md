@@ -30,6 +30,7 @@
   - **Texto sin formato (.txt)**.
 - **📥 Importar**: trae tus apuntes de Word (.docx), LibreOffice (.odt), páginas web (.html), Markdown (.md) o texto (.txt) para seguir editándolos aquí. Conserva títulos, negritas, cursivas, listas, tablas e imágenes.
 - **🖼 Imágenes con Ctrl+V**: haz un recorte con Win+Shift+S (o copia una imagen) y pégalo en el apunte. En el editor se ve solo la imagen, y sale también al exportar. Para quitarla, pulsa Retroceso justo detrás de ella.
+- **▦ Tablas y 🗺 mapa mental**: inserta tablas que se recorren con Tab y salen como tablas de verdad al exportar, y convierte los títulos y listas del apunte en un mapa mental.
 - **⏱ Marcas de tiempo, ▶ cronómetro y 📎 adjuntar capturas o PDF.**
 
 ## Instalar
@@ -84,11 +85,16 @@ Descarga el código y abre **`Abrir apuntes.bat`** con clic derecho → *Ejecuta
 | Ctrl+Alt+A | Mostrar u ocultar la ventana desde cualquier programa |
 | Ctrl + / Ctrl - / Ctrl 0 (o Ctrl + rueda) | Letra más grande / más pequeña / normal |
 | Ctrl+Retroceso / Ctrl+Supr | Borrar la palabra entera a la izquierda / a la derecha |
-| Ctrl+B / Ctrl+K | **Negrita** / *cursiva* (con texto seleccionado lo envuelve) |
+| Mayús+Supr | Borrar la palabra a la derecha (o cortar la selección, según el ajuste del clic derecho) |
+| Ctrl+B / Ctrl+K / Ctrl+Mayús+X | **Negrita** / *cursiva* / ~~tachado~~ (con texto seleccionado lo envuelve) |
+| `(` `[` `{` `"` `¿` `¡` `«` | Se cierran solos con el cursor en medio. Al escribir el cierre se lo salta, y Retroceso en un par vacío borra los dos |
+| Tab / Enter en una tabla | Celda siguiente / primera celda de la fila siguiente; al final añade una fila nueva (botón ▦ Tabla) |
 | Enter en una lista | Siguiente elemento (`1.` → `2.`, `a.` → `b.`). En un elemento vacío, termina la lista |
 | Tab / Mayús+Tab | Bajar o subir un nivel de la lista (`1.` → `a.` → `i.`) |
 | Retroceso tras la viñeta | En `2.` vacío pasa a `a.`; en `a.` vuelve al número; otra vez, quita la viñeta |
 | `->` `=>` `<=` `!=` `...` + espacio | Se convierten en → ⇒ ≤ ≠ … (Ctrl+Z lo deshace) |
+| Espacio tras una palabra sin tilde | Se corrige sola (`aqui` → `aquí`), también antes de punto o paréntesis. Ctrl+Z lo deshace |
+| Letra al empezar línea o frase | Sale en mayúscula, también tras `¿`, `¡`, `(` o comillas. Se desactiva en el clic derecho |
 | `/idea` `/ojo` `/resumen` `/nota` `/pregunta` `/definicion` + espacio | Bloque destacado de color (también en el botón ➕ Bloque) |
 | F7 | Revisar la ortografía: «¿Quieres corregir estas palabras?» con la sugerencia de cada una (también en ✓ Ortografía) |
 | Clic derecho en una palabra subrayada | Sugerencias, o «Añadir a mi diccionario» para que no se marque más |
