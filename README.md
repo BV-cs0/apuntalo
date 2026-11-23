@@ -150,24 +150,6 @@ Para generar el `.exe`: `py -3 -m pip install -r requirements.txt` y después ej
 2. Crea una *Release* en GitHub con la etiqueta `vX.Y.Z` y adjunta el `Apuntalo.exe` nuevo.
 3. Al publicar la *Release*, GitHub Actions sube la versión a PyPI solo (`.github/workflows/publicar.yml`). Usa *Trusted Publishing*, sin contraseñas ni tokens. También se puede lanzar a mano: *Actions* → **Publicar en PyPI** → *Run workflow*. PyPI no deja volver a subir un número de versión que ya existe: si ya está, el workflow se la salta.
 
-## Qué probar (lista para la versión 1.1)
-
-- [ ] **Abrir:** doble clic en `Apuntalo.exe` (o en `Abrir apuntes.bat`). La ventana se abre y, la segunda vez, vuelve al último apunte.
-- [ ] **pip:** `py -m pip install apuntalo` y después `py -m apuntalo`. Se abre y guarda los apuntes en `Documentos\Apuntalo`.
-- [ ] **Organizar:** crea la carpeta `Matemáticas/Tema 1` y un apunte con la plantilla *Clase / estudio*. Ponle etiquetas y búscalo con Ctrl+F.
-- [ ] **Formato:** escribe `# Título`, `**negrita**` y `- [x] tarea` y comprueba que se colorean. Prueba Ctrl + y Ctrl - para cambiar el tamaño de la letra.
-- [ ] **Imágenes:** haz un recorte con Win+Shift+S y pulsa Ctrl+V en un apunte. Se ve solo la imagen, sin el texto `![...]`. Pulsa Retroceso detrás de ella y desaparece entera. Copia texto normal y comprueba que Ctrl+V sigue pegando texto.
-- [ ] **Exportar a todo:** Ctrl+E, cambia *Guardar en* con los botones (Escritorio, Documentos...) y exporta el mismo apunte en los seis formatos. Abre el `.odt` en LibreOffice y el `.html` en el móvil.
-- [ ] **Importar:** Ctrl+I y elige un Word tuyo de verdad (con títulos, listas e imágenes). Se crea un apunte con la etiqueta `importado` que puedes editar.
-- [ ] **Autoguardado:** escribe algo, espera 15 segundos y cierra la app desde el Administrador de tareas. Al volver a abrirla, el texto sigue ahí.
-- [ ] **Sobre un vídeo:** pon un vídeo de YouTube y pulsa F9 (fijar) y F10 (compacto). Ajusta la transparencia y prueba Ctrl+Alt+A desde el navegador.
-- [ ] **Automático con audio:** F8, marca solo 🎧 y pon un vídeo con voz. Comprueba que el texto aparece en párrafos con su `[hh:mm:ss]` y sin repeticiones.
-- [ ] **Automático con pantalla:** F8, marca 🖥 y elige con ✂ la zona de unas diapositivas. Cambia de diapositiva y comprueba que aparece una captura con su texto.
-- [ ] **ChatGPT:** ✨ Resumir con IA → ChatGPT. Pega en chatgpt.com, copia la respuesta y pulsa «Crear apunte con la respuesta».
-- [ ] **Gemini:** crea una clave gratis en aistudio.google.com/apikey y usa ✨ Resumir con IA → Gemini.
-- [ ] **Exportar:** Ctrl+E y exporta a PDF y a Word un apunte y una asignatura entera. Abre el `.docx` en Word, LibreOffice o Google Docs y comprueba que se ve bien.
-- [ ] **Compacto:** al pasar a modo compacto (F10), todos los botones de la barra pequeña funcionan.
-
 ## Licencia
 
 [MIT](https://github.com/BV-cs0/apuntalo/blob/main/LICENSE): puedes usarlo, copiarlo, modificarlo y compartirlo libremente.
