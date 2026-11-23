@@ -27,6 +27,43 @@ class TestMarcas(unittest.TestCase):
             self.assertIsNone(ed.analizar(no), no)
 
 
+def test_tabla_tab_avanza_y_salta_el_separador():
+    lineas = ["| Nombre | Nota |", "| :--- | ---: |", "| Ana | 9 |"]
+    assert ed.tabla_tab(lineas, 0, 4) == (lineas, 0, 11)
+    assert ed.tabla_tab(lineas, 0, 13) == (lineas, 2, 2)
+    assert ed.tabla_tab(lineas, 1, 3) == (lineas, 2, 2)
+
+
+def test_tabla_mayus_tab_retrocede_y_salta_el_separador():
+    lineas = ["| Nombre | Nota |", "| --- | --- |", "| Ana | 9 |"]
+    assert ed.tabla_tab(lineas, 2, 8, atras=True) == (lineas, 2, 2)
+    assert ed.tabla_tab(lineas, 2, 2, atras=True) == (lineas, 0, 11)
+    assert ed.tabla_tab(lineas, 1, 3, atras=True) == (lineas, 0, 11)
+    assert ed.tabla_tab(lineas, 0, 2, atras=True) is None
+
+
+def test_tabla_tab_anade_una_fila_antes_del_texto():
+    lineas = ["| Ana | 9 |", "Texto"]
+    nuevas, fila, col = ed.tabla_tab(lineas, 0, 8)
+    assert nuevas == ["| Ana | 9 |", "| | |", "Texto"]
+    assert (fila, col) == (1, 2)
+    assert lineas == ["| Ana | 9 |", "Texto"]
+
+
+def test_tabla_enter_pasa_a_la_primera_celda_o_anade_fila():
+    lineas = ["| Nombre | Nota |", "| --- | --- |", "| Ana | 9 |"]
+    assert ed.tabla_enter(lineas, 0, 3) == (lineas, 2, 2)
+    assert ed.tabla_enter(lineas, 0, 13) == (lineas, 2, 2)
+    assert ed.tabla_enter(lineas, 2, 3) == (lineas + ["| | |"], 3, 2)
+
+
+def test_teclas_de_tabla_fuera_de_una_tabla_y_en_codigo():
+    lineas = ["Texto | suelto |", "```", "| Ana | 9 |", "```"]
+    for fila in (0, 2):
+        assert ed.tabla_tab(lineas, fila, 4) is None
+        assert ed.tabla_enter(lineas, fila, 4) is None
+
+
 class TestListas(unittest.TestCase):
     def test_enter_crea_el_siguiente(self):
         lineas, fila, col = ed.enter(["1. Hola"], 0, 7)
@@ -131,6 +168,39 @@ class TestSimbolos(unittest.TestCase):
         self.assertEqual(ed.tipo_bloque("> 💡 Idea clave: x"), "idea")
         self.assertEqual(ed.tipo_bloque("> cita"), "cita")
         self.assertIsNone(ed.tipo_bloque("nada"))
+
+
+def test_necesita_mayuscula():
+    assert ed.necesita_mayuscula(["Hola", ""], 1, 0)
+    for antes in ("Hola. ", "¡Hola!  ", "¿Hola? ", "Hola.\t"):
+        assert ed.necesita_mayuscula([antes], 0, len(antes))
+    for antes in ("Ho", "Hola ", "Hola.", "Hola. Mundo "):
+        assert not ed.necesita_mayuscula([antes], 0, len(antes))
+    for col in (0, 6):
+        assert not ed.necesita_mayuscula(["```", "Hola. ", "```"], 1, col)
+    assert ed.necesita_mayuscula(["¿"], 0, 1)
+    assert ed.necesita_mayuscula(["Bien. ¡"], 0, 7)
+    assert not ed.necesita_mayuscula(["hola ("], 0, 6)
+
+
+def test_accion_par():
+    assert ed.accion_par("hola", 4, "(") == "par"
+    assert ed.accion_par("hola mundo", 4, "[") == "par"
+    assert ed.accion_par("hola", 0, "{") is None
+    assert ed.accion_par("()", 1, ")") == "saltar"
+    assert ed.accion_par("[]", 1, ")") is None
+    assert ed.accion_par("hola", 4, '"') is None
+    assert ed.accion_par("hola ", 5, '"') == "par"
+    assert ed.accion_par('hola"', 4, '"') == "saltar"
+    assert ed.accion_par("", 0, "¿") == "par"
+
+
+def test_borra_par():
+    assert ed.borra_par("()", 1)
+    assert ed.borra_par('""', 1)
+    assert ed.borra_par("¿?", 1)
+    assert not ed.borra_par("(x", 1)
+    assert not ed.borra_par("()", 0)
 
 
 if __name__ == "__main__":

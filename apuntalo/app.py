@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import editor, exportar, importar, ortografia, portapapeles
+from . import editor, exportar, importar, mapa, ortografia, portapapeles
 
 PAQUETE = Path(__file__).resolve().parent
 
@@ -435,6 +435,8 @@ class App(tk.Tk):
         ttk.Button(barra, text="🗗 Compacto", command=self.alternar_compacto).pack(side="right", padx=4)
         ttk.Button(barra, text="📤 Exportar", command=self.menu_exportar).pack(side="right")
         ttk.Button(barra, text="📥 Importar", command=self.importar).pack(side="right", padx=(0, 4))
+        ttk.Button(barra, text="🗺 Mapa mental", command=self.mapa_mental).pack(side="right", padx=(0, 4))
+        ttk.Button(barra, text="▦ Tabla", command=self.insertar_tabla).pack(side="right", padx=(0, 4))
         ttk.Button(clase, text="✨ Resumir con IA", command=self.resumir_ia).pack(side="right")
         self.btn_auto = ttk.Button(clase, text="🤖 Apuntes automáticos", command=self.alternar_auto)
         self.btn_auto.pack(side="right", padx=4)
@@ -533,6 +535,7 @@ class App(tk.Tk):
         # Escribir como en Word: borrar palabras, listas que siguen solas, flechas automáticas
         t.bind("<Control-BackSpace>", lambda e: self._borrar_palabra(adelante=False))
         t.bind("<Control-Delete>", lambda e: self._borrar_palabra(adelante=True))
+        t.bind("<Shift-Delete>", self._tecla_mayus_supr)
         t.bind("<Return>", self._tecla_enter)
         t.bind("<KP_Enter>", self._tecla_enter)
         t.bind("<Tab>", lambda e: self._tecla_tab(atras=False))
@@ -542,8 +545,10 @@ class App(tk.Tk):
         except tk.TclError:
             pass
         t.bind("<space>", self._tecla_espacio)
+        t.bind("<KeyPress>", self._tecla_general)
         t.bind("<Control-b>", lambda e: self._envolver("**"))
         t.bind("<Control-k>", lambda e: self._envolver("*"))
+        t.bind("<Control-Shift-X>", lambda e: self._envolver("~~"))
         self.estado = ttk.Label(der, text="", foreground="gray")
         self.estado.pack(side="bottom", anchor="w", before=marco)  # siempre visible abajo
         panel.add(der, weight=3)
@@ -647,6 +652,7 @@ class App(tk.Tk):
         t.tag_configure("simbolo", foreground=c["suave"])      # los «#» de los títulos, más discretos
         t.tag_configure("negrita", font=(LETRA, n, "bold"))
         t.tag_configure("cursiva", font=(LETRA, n, "italic"))
+        t.tag_configure("tachado", overstrike=True)
         t.tag_configure("codigo", font=(MONO, n - 1), background=c["acento_suave"], foreground=c["titulo"])
         t.tag_configure("bloque_codigo", font=(MONO, n - 1), background=c["codigo"], lmargin1=12, lmargin2=12)
         t.tag_configure("tiempo", foreground=c["acento"])
@@ -669,6 +675,7 @@ class App(tk.Tk):
     PATRONES = [
         ("negrita", re.compile(r"\*\*[^*\n]+\*\*")),
         ("cursiva", re.compile(r"(?<![*\w])\*[^*\s][^*\n]*\*(?!\*)")),
+        ("tachado", re.compile(r"~~[^~\n]+~~")),
         ("codigo", re.compile(r"`[^`\n]+`")),
         ("tiempo", re.compile(r"\[\d{1,2}:\d{2}(?::\d{2})?\]")),
     ]
@@ -676,8 +683,8 @@ class App(tk.Tk):
     def resaltar(self):
         """Colorea el Markdown del editor: títulos, negritas, citas, listas, marcas de tiempo."""
         t = self.texto
-        quitar = ["h1", "h2", "h3", "simbolo", "negrita", "cursiva", "codigo", "cita", "tiempo", "hecha", "vineta",
-                  "regla", "bloque_codigo"]
+        quitar = ["h1", "h2", "h3", "simbolo", "negrita", "cursiva", "tachado", "codigo", "cita", "tiempo", "hecha",
+                  "vineta", "regla", "bloque_codigo"]
         quitar += ["bloque_" + b for b in self.colores["bloques"]]
         quitar += [tag for tag in t.tag_names() if tag.startswith("colgante_")]
         for tag in quitar:
@@ -784,10 +791,18 @@ class App(tk.Tk):
         m.add_command(label="Cortar", command=lambda: t.event_generate("<<Cut>>"))
         m.add_command(label="Copiar", command=lambda: t.event_generate("<<Copy>>"))
         m.add_command(label="Pegar", command=lambda: t.event_generate("<<Paste>>"))
+        m.add_checkbutton(label="Mayús+Supr corta en vez de borrar la palabra",
+                          variable=self._var_mayus_supr_corta(), command=self._alternar_mayus_supr_corta)
         m.add_separator()
         m.add_command(label="Revisar ortografía…  (F7)", command=self.dialogo_ortografia)
         m.add_checkbutton(label="Subrayar faltas mientras escribo", variable=self._var_ortografia(),
                           command=self._alternar_ortografia)
+        m.add_checkbutton(label="Corregir tildes automáticamente", variable=self._var_tildes(),
+                          command=self._alternar_tildes)
+        m.add_checkbutton(label="Mayúscula automática al empezar frase",
+                          variable=self._var_mayusculas_auto(), command=self._alternar_mayusculas_auto)
+        m.add_checkbutton(label="Cerrar paréntesis y comillas automáticamente",
+                          variable=self._var_cierre_automatico(), command=self._alternar_cierre_automatico)
         m.tk_popup(e.x_root, e.y_root)
         return "break"
 
@@ -800,6 +815,42 @@ class App(tk.Tk):
         self.cfg["ortografia"] = bool(self._var_ortografia().get())
         guardar_config(self.cfg)
         self.subrayar_faltas()
+
+    def _var_tildes(self):
+        if not hasattr(self, "_v_tildes"):
+            self._v_tildes = tk.BooleanVar(value=self.cfg.get("tildes", True))
+        return self._v_tildes
+
+    def _alternar_tildes(self):
+        self.cfg["tildes"] = bool(self._var_tildes().get())
+        guardar_config(self.cfg)
+
+    def _var_mayusculas_auto(self):
+        if not hasattr(self, "_v_mayusculas_auto"):
+            self._v_mayusculas_auto = tk.BooleanVar(value=self.cfg.get("mayusculas_auto", True))
+        return self._v_mayusculas_auto
+
+    def _alternar_mayusculas_auto(self):
+        self.cfg["mayusculas_auto"] = bool(self._var_mayusculas_auto().get())
+        guardar_config(self.cfg)
+
+    def _var_cierre_automatico(self):
+        if not hasattr(self, "_v_cierre_automatico"):
+            self._v_cierre_automatico = tk.BooleanVar(value=self.cfg.get("cierre_automatico", True))
+        return self._v_cierre_automatico
+
+    def _alternar_cierre_automatico(self):
+        self.cfg["cierre_automatico"] = bool(self._var_cierre_automatico().get())
+        guardar_config(self.cfg)
+
+    def _var_mayus_supr_corta(self):
+        if not hasattr(self, "_v_mayus_supr_corta"):
+            self._v_mayus_supr_corta = tk.BooleanVar(value=self.cfg.get("mayus_supr_corta", False))
+        return self._v_mayus_supr_corta
+
+    def _alternar_mayus_supr_corta(self):
+        self.cfg["mayus_supr_corta"] = bool(self._var_mayus_supr_corta().get())
+        guardar_config(self.cfg)
 
     def palabra_propia(self, palabra):
         """La palabra deja de marcarse (se guarda en la configuración: nombres, términos técnicos…)."""
@@ -953,13 +1004,21 @@ class App(tk.Tk):
         if not self._editable() or self.texto.tag_ranges("sel"):
             return None
         fila, col = self._posicion()
-        return self._aplicar(editor.enter(self._lineas(), fila - 1, col))
+        lineas = self._lineas()
+        resultado = editor.enter(lineas, fila - 1, col)
+        if resultado is None:
+            resultado = editor.tabla_enter(lineas, fila - 1, col)
+        return self._aplicar(resultado)
 
     def _tecla_tab(self, atras):
         if not self._editable():
             return "break"
         fila, col = self._posicion()
-        r = self._aplicar(editor.tab(self._lineas(), fila - 1, col, atras=atras))
+        lineas = self._lineas()
+        resultado = editor.tab(lineas, fila - 1, col, atras=atras)
+        if resultado is None:
+            resultado = editor.tabla_tab(lineas, fila - 1, col, atras=atras)
+        r = self._aplicar(resultado)
         if r or atras:
             return "break"   # Mayús+Tab fuera de una lista no salta a otro control
         return None
@@ -970,6 +1029,15 @@ class App(tk.Tk):
             return r
         fila, col = self._posicion()
         lineas = self._lineas()
+        if self.cfg.get("cierre_automatico", True) and editor.borra_par(lineas[fila - 1], col):
+            t = self.texto
+            t.configure(autoseparators=False)
+            t.edit_separator()
+            t.delete("insert-1c", "insert+1c")
+            t.edit_separator()
+            t.configure(autoseparators=True)
+            t.see("insert")
+            return "break"
         # Si este elemento acaba de subir de nivel con Retroceso (a. → 2.), el siguiente quita la viñeta
         # en vez de volver a bajarlo: así no se queda dando vueltas.
         sangrar = getattr(self, "_subido", None) != (fila, lineas[fila - 1])
@@ -979,16 +1047,84 @@ class App(tk.Tk):
         self._subido = (fila, res[0][fila - 1]) if subio else None
         return self._aplicar(res)
 
-    def _tecla_espacio(self, _e=None):
-        """Flechas y símbolos al escribir (-> da →) y comandos de bloque (/idea)."""
+    def _tecla_general(self, e):
+        """Cierra pares y pone en mayúscula la letra al empezar frase."""
         t = self.texto
-        if not self._editable() or t.tag_ranges("sel") or not self.cfg.get("simbolos", True):
+        caracter = e.char
+        if (self.cfg.get("cierre_automatico", True)
+                and (caracter in editor.PARES or caracter in editor.CIERRES) and self._editable()):
+            seleccion = t.tag_ranges("sel")
+            if seleccion:
+                if caracter not in editor.PARES:
+                    return None
+                ini, fin = t.index("sel.first"), t.index("sel.last")
+                accion = "envolver"
+            else:
+                _, col = self._posicion()
+                linea = t.get("insert linestart", "insert lineend")
+                accion = editor.accion_par(linea, col, caracter)
+            if accion == "saltar":
+                t.mark_set("insert", "insert+1c")
+                t.see("insert")
+                return "break"
+            if accion:
+                t.configure(autoseparators=False)
+                t.edit_separator()
+                if seleccion:
+                    # Sin etiquetas en los signos para conservar seleccionada solo la parte interior.
+                    t.insert(fin, editor.PARES[caracter], ())
+                    t.insert(ini, caracter, ())
+                else:
+                    t.insert("insert", caracter + editor.PARES[caracter])
+                    t.mark_set("insert", "insert-1c")
+                t.edit_separator()
+                t.configure(autoseparators=True)
+                t.see("insert")
+                return "break"
+        if not e.char or not e.char.isalpha() or not e.char.islower():
+            return None
+        if not self._editable() or t.tag_ranges("sel") or not self.cfg.get("mayusculas_auto", True):
+            return None
+        fila, col = self._posicion()
+        if not editor.necesita_mayuscula(self._lineas(), fila - 1, col):
+            return None
+        t.configure(autoseparators=False)
+        t.edit_separator()
+        t.insert("insert", e.char.upper())
+        t.edit_separator()
+        t.configure(autoseparators=True)
+        return "break"
+
+    def _tecla_espacio(self, _e=None):
+        """Flechas, símbolos, comandos de bloque y tildes al escribir."""
+        t = self.texto
+        if not self._editable() or t.tag_ranges("sel"):
+            return None
+        simbolos = self.cfg.get("simbolos", True)
+        tildes = self.cfg.get("ortografia", True) and self.cfg.get("tildes", True)
+        if not (simbolos or tildes):
             return None
         fila, _ = self._posicion()
         if editor.en_codigo(self._lineas(), fila - 1):
             return None
-        cambio = editor.sustitucion(t.get(f"{fila}.0", "insert"))
+        linea = t.get(f"{fila}.0", "insert")
+        cambio = editor.sustitucion(linea) if simbolos else None
         if not cambio:
+            if tildes and (corrector := self._corrector()):
+                sin_cierres = linea.rstrip(')]}"?!».,;:')
+                for ini, fin, palabra in ortografia.palabras(sin_cierres):
+                    if fin == len(sin_cierres):
+                        correccion = ortografia.correccion_tilde(corrector, palabra)
+                        if correccion:
+                            t.configure(autoseparators=False)
+                            t.edit_separator()
+                            inicio = t.index(f"insert-{len(linea) - ini}c")
+                            t.delete(inicio, f"insert-{len(linea) - fin}c")
+                            t.insert(inicio, correccion)
+                            t.configure(autoseparators=True)
+                            # El espacio de Tk se deshace junto con la corrección.
+                            t.after_idle(t.edit_separator)
+                        break
             return None
         quitar, poner = cambio
         t.configure(autoseparators=False)
@@ -1000,8 +1136,17 @@ class App(tk.Tk):
         t.see("insert")
         return "break"
 
+    def _tecla_mayus_supr(self, _e=None):
+        """Mayús+Supr: borra la palabra o la selección como Ctrl+Supr, salvo que se haya configurado para cortar."""
+        if not self._editable():
+            return "break"
+        if self.cfg.get("mayus_supr_corta", False):
+            self.texto.event_generate("<<Cut>>")
+            return "break"
+        return self._borrar_palabra(adelante=True)
+
     def _borrar_palabra(self, adelante):
-        """Ctrl+Retroceso / Ctrl+Supr: borra la palabra entera, como en cualquier programa."""
+        """Ctrl+Retroceso / Ctrl+Supr / Mayús+Supr: borra la palabra entera, como en cualquier programa."""
         t = self.texto
         if not self._editable():
             return "break"
@@ -1026,7 +1171,7 @@ class App(tk.Tk):
         return "break"
 
     def _envolver(self, marca):
-        """Ctrl+B negrita / Ctrl+K cursiva: rodea la selección (o deja el cursor en medio)."""
+        """Rodea la selección con la marca (o deja el cursor en medio)."""
         t = self.texto
         if not self._editable():
             return "break"
@@ -1049,6 +1194,45 @@ class App(tk.Tk):
             t.mark_set("insert", "insert lineend")
             t.insert("insert", "\n")
         t.insert("insert", texto)
+        t.focus_set()
+        self.resaltar()
+
+    def insertar_tabla(self):
+        """Inserta una tabla en la línea del cursor o debajo y deja el cursor en la primera celda."""
+        if not self._editable():
+            messagebox.showinfo("Tabla", "Abre o crea una nota primero.")
+            return
+        columnas = simpledialog.askinteger("Tabla", "Columnas:", parent=self, initialvalue=2, minvalue=1)
+        if columnas is None:
+            return
+        filas = simpledialog.askinteger("Tabla", "Filas (incluye el encabezado):",
+                                       parent=self, initialvalue=3, minvalue=1)
+        if filas is None:
+            return
+        vacia = "| " * columnas + "|"
+        tabla = [vacia]
+        if filas > 1:
+            tabla += ["| " + " | ".join(["---"] * columnas) + " |"] + [vacia] * (filas - 1)
+
+        t = self.texto
+        fila, _ = self._posicion()
+        lineas = self._lineas()
+        if t.compare(f"{fila}.0", "!=", f"{fila}.end"):
+            punto = f"{fila}.end"
+            antes = "\n\n"
+            despues = "\n" if fila == len(lineas) or lineas[fila].strip() else ""
+        else:
+            punto = f"{fila}.0"
+            antes = "\n" if fila > 1 and lineas[fila - 2].strip() else ""
+            despues = "\n"
+        t.configure(autoseparators=False)
+        t.edit_separator()
+        try:
+            t.insert(punto, antes + "\n".join(tabla) + despues)
+        finally:
+            t.edit_separator()
+            t.configure(autoseparators=True)
+        t.mark_set("insert", f"{fila + len(antes)}.2")
         t.focus_set()
         self.resaltar()
 
@@ -1833,6 +2017,89 @@ class App(tk.Tk):
         if que == "carpeta" and self._carpeta_elegida():
             return self._carpeta_elegida().relative_to(NOTAS).as_posix()
         return "Apuntes"
+
+    def mapa_mental(self):
+        """Dibuja el esquema del apunte abierto."""
+        texto = self.texto.get("1.0", "end-1c") if self.actual is not None else ""
+        raices = mapa.nodos(texto)
+        if not raices:
+            messagebox.showinfo("Mapa mental", "Abre un apunte con un tema y una lista sangrada de flechas, "
+                                "por ejemplo:\n\nFotosíntesis\n   → Fase luminosa\n"
+                                "      → produce ATP y NADPH", parent=self)
+            return
+        titulo = self.titulo.get().strip() or "sin titulo"
+        c = self.colores
+        v = tk.Toplevel(self)
+        v.title(f"Mapa mental -- {titulo}")
+        v.geometry("900x600")
+        v.transient(self)
+        v.configure(background=c["fondo"])
+        marco = ttk.Frame(v, padding=8)
+        marco.pack(fill="both", expand=True)
+        marco.columnconfigure(0, weight=1)
+        marco.rowconfigure(0, weight=1)
+        lienzo = tk.Canvas(marco, highlightthickness=0, background=c["hoja"])
+        vertical = ttk.Scrollbar(marco, orient="vertical", command=lienzo.yview)
+        horizontal = ttk.Scrollbar(marco, orient="horizontal", command=lienzo.xview)
+        lienzo.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)
+        lienzo.grid(row=0, column=0, sticky="nsew")
+        vertical.grid(row=0, column=1, sticky="ns")
+        horizontal.grid(row=1, column=0, sticky="ew")
+        v.bind("<MouseWheel>", lambda e: lienzo.yview_scroll(-e.delta // 120, "units"))
+        v.bind("<Shift-MouseWheel>", lambda e: lienzo.xview_scroll(-e.delta // 120, "units"))
+        v.bind("<Button-4>", lambda e: lienzo.yview_scroll(-1, "units"))
+        v.bind("<Button-5>", lambda e: lienzo.yview_scroll(1, "units"))
+
+        ancho_col, alto_fila = 220, 46
+        cajas, ancho, alto = mapa.disponer(raices, ancho_col, alto_fila)
+        rotulos = {}
+        for caja in cajas:
+            rotulo = lienzo.create_text(0, 0, text=caja.nodo.texto, width=ancho_col - 20,
+                                        fill=c["texto"], font=(LETRA, 10), justify="center")
+            rotulos[id(caja.nodo)] = rotulo
+            limites = lienzo.bbox(rotulo)
+            if limites:
+                alto_fila = max(alto_fila, limites[3] - limites[1] + 16)
+        if alto_fila != 46:
+            cajas, ancho, alto = mapa.disponer(raices, ancho_col, alto_fila)
+        lienzo.configure(scrollregion=(0, 0, ancho, alto))
+        por_nodo = {id(caja.nodo): caja for caja in cajas}
+        for caja in cajas:
+            for hijo in caja.nodo.hijos:
+                destino = por_nodo[id(hijo)]
+                lienzo.create_line(caja.x + ancho_col - 8, caja.y + alto_fila // 2,
+                                   destino.x + 8, destino.y + alto_fila // 2,
+                                   fill=c["acento"], arrow=tk.LAST)
+        for caja in cajas:
+            lienzo.create_rectangle(caja.x + 8, caja.y + 4, caja.x + ancho_col - 8,
+                                    caja.y + alto_fila - 4, fill=c["acento_suave"], outline=c["acento"])
+            rotulo = rotulos[id(caja.nodo)]
+            lienzo.coords(rotulo, caja.x + ancho_col // 2, caja.y + alto_fila // 2)
+            lienzo.tag_raise(rotulo)
+
+        def guardar_imagen():
+            try:
+                from PIL import ImageGrab
+            except ImportError:
+                messagebox.showerror("Mapa mental", "Falta el paquete 'Pillow' (py -3 -m pip install Pillow).",
+                                     parent=v)
+                return
+            destino = filedialog.asksaveasfilename(parent=v, title="Guardar como imagen",
+                                                    initialfile=titulo + ".png", defaultextension=".png",
+                                                    filetypes=[("Imagen PNG", "*.png")])
+            if not destino:
+                return
+            v.lift()
+            v.update_idletasks()
+            x, y = lienzo.winfo_rootx(), lienzo.winfo_rooty()
+            try:
+                # Solo se captura la parte visible del mapa.
+                ImageGrab.grab(bbox=(x, y, x + lienzo.winfo_width(), y + lienzo.winfo_height())).save(destino)
+            except OSError as e:
+                messagebox.showerror("Mapa mental", f"No se pudo guardar la imagen:\n{e}", parent=v)
+
+        ttk.Button(marco, text="💾 Guardar como imagen", command=guardar_imagen).grid(
+            row=2, column=0, sticky="e", pady=(8, 0))
 
     def menu_exportar(self):
         """Ventana «Exportar»: qué exportar, en qué formato (Guardar como) y en qué carpeta (Guardar en)."""

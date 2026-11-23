@@ -13,31 +13,37 @@ from pathlib import Path
 from .editor import ESTILO_BLOQUE
 
 # ---------- Markdown (subconjunto) ----------
-INLINE = re.compile(r"(\*\*.+?\*\*|__.+?__|`[^`]+`|\*[^*\s][^*]*?\*|!?\[[^\]]*\]\(<?[^)>]*>?\))")
+INLINE = re.compile(r"(\*\*.+?\*\*|__.+?__|~~.+?~~|`[^`]+`|\*[^*\s][^*]*?\*|!?\[[^\]]*\]\(<?[^)>]*>?\))")
 
 
 def trozos(texto):
-    """Devuelve [(texto, negrita, cursiva, codigo)]."""
+    """Devuelve [(texto, negrita, cursiva, codigo, tachado, enlace)]."""
     out = []
     for parte in INLINE.split(texto):
         if not parte:
             continue
         if (parte.startswith("**") and parte.endswith("**") or parte.startswith("__") and parte.endswith("__")) and len(parte) > 4:
-            out += [(t, True, i, c) for t, _, i, c in trozos(parte[2:-2])]
+            out += [(t, True, i, c, ta, enlace) for t, _, i, c, ta, enlace in trozos(parte[2:-2])]
+        elif parte.startswith("~~") and parte.endswith("~~") and len(parte) > 4:
+            out += [(t, b, i, c, True, enlace) for t, b, i, c, _, enlace in trozos(parte[2:-2])]
         elif parte.startswith("`") and parte.endswith("`") and len(parte) > 2:
-            out.append((parte[1:-1], False, False, True))
+            out.append((parte[1:-1], False, False, True, False, None))
         elif parte.startswith("*") and parte.endswith("*") and len(parte) > 2:
-            out += [(t, b, True, c) for t, b, _, c in trozos(parte[1:-1])]
-        elif re.fullmatch(r"\[[^\]]*\]\(<?[^)>]*>?\)", parte):
-            out.append((parte[1:parte.index("](")], False, False, False))
+            out += [(t, b, True, c, ta, enlace) for t, b, _, c, ta, enlace in trozos(parte[1:-1])]
+        elif m := re.fullmatch(r"\[([^\]]*)\]\(<?([^)>]*)>?\)", parte):
+            out.append((m[1], False, False, False, False, m[2]))
         else:
-            out.append((parte, False, False, False))
+            out.append((parte, False, False, False, False, None))
     return out
 
 
 def bloques(md):
     res, en_codigo, codigo = [], False, []
-    for linea in md.splitlines():
+    lineas = md.splitlines()
+    i = 0
+    while i < len(lineas):
+        linea = lineas[i]
+        i += 1
         if linea.strip().startswith("```"):
             if en_codigo:
                 res.append({"tipo": "codigo", "texto": "\n".join(codigo)})
@@ -66,6 +72,22 @@ def bloques(md):
             res.append({"tipo": "ol", "num": m[1], "texto": m[2], "nivel": nivel})
         elif s.startswith(">"):
             res.append({"tipo": "cita", "texto": s.lstrip("> ")})
+        elif re.fullmatch(r"\|.*\|\s*", linea):
+            filas, encabezado, posicion = [], False, 0
+            while True:
+                celdas = [celda.strip() for celda in linea.strip()[1:-1].split("|")]
+                if all(re.fullmatch(r":?-+:?", celda) for celda in celdas):
+                    if posicion == 1 and filas:
+                        encabezado = True
+                else:
+                    filas.append(celdas)
+                posicion += 1
+                if i == len(lineas) or not re.fullmatch(r"\|.*\|\s*", lineas[i]):
+                    break
+                linea = lineas[i]
+                i += 1
+            if filas:
+                res.append({"tipo": "tabla", "filas": filas, "encabezado": encabezado})
         else:
             res.append({"tipo": "p", "texto": s})
     if codigo:
@@ -87,7 +109,7 @@ def subtitulo(nota):
 # ---------- HTML / PDF ----------
 def _inline_html(texto):
     out = ""
-    for t, b, i, c in trozos(texto):
+    for t, b, i, c, ta, enlace in trozos(texto):
         t = html.escape(t)
         if c:
             t = f"<code>{t}</code>"
@@ -95,6 +117,10 @@ def _inline_html(texto):
             t = f"<em>{t}</em>"
         if b:
             t = f"<strong>{t}</strong>"
+        if ta:
+            t = f"<s>{t}</s>"
+        if enlace:
+            t = f'<a href="{html.escape(enlace)}">{t}</a>'
         out += t
     return out
 
@@ -134,6 +160,13 @@ def a_html(notas, titulo_doc, incrustar=False):
             elif t == "cita":
                 clase = next((f" class={n}" for e, n in ESTILO_BLOQUE.items() if b["texto"].startswith(e)), "")
                 cuerpo.append(f"<blockquote{clase}>{_inline_html(b['texto'])}</blockquote>")
+            elif t == "tabla":
+                cuerpo.append("<table>")
+                for k, fila in enumerate(b["filas"]):
+                    etiqueta = "th" if k == 0 and b["encabezado"] else "td"
+                    celdas = "".join(f"<{etiqueta}>{_inline_html(celda)}</{etiqueta}>" for celda in fila)
+                    cuerpo.append(f"<tr>{celdas}</tr>")
+                cuerpo.append("</table>")
             else:
                 cuerpo.append(f"<p>{_inline_html(b['texto'])}</p>")
         cuerpo.append("</section>")
@@ -146,6 +179,9 @@ h2 {{ font-size: 15pt; margin: 14pt 0 4pt; color: #2F5496; border-bottom: 1px so
 h3 {{ font-size: 13pt; margin: 10pt 0 3pt; color: #2F5496; }}
 h4 {{ font-size: 11.5pt; margin: 8pt 0 2pt; }}
 p {{ margin: 3pt 0; }}
+table {{ border-collapse: collapse; }}
+th, td {{ border: 1px solid #BFBFBF; padding: 5pt; }}
+th {{ background: #E6ECF8; }}
 .sub {{ color: #666; font-size: 10pt; margin-bottom: 12pt; }}
 .li {{ padding-left: 20px; text-indent: -20px; }} .m {{ display: inline-block; width: 20px; text-indent: 0; }}
 .adj {{ color: #777; font-style: italic; }}
@@ -195,15 +231,6 @@ def a_pdf(notas, destino, titulo_doc):
 # ---------- DOCX ----------
 def _x(t):
     return html.escape(t, quote=False)
-
-
-def _runs(texto, extra=""):
-    out = ""
-    for t, b, i, c in trozos(texto):
-        # orden exigido por Word: rFonts, b, i, color, shd
-        rpr = ('<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/>' if c else "") + ("<w:b/>" if b else "") +               ("<w:i/>" if i or "<w:i/>" in extra else "") + extra.replace("<w:i/>", "") +               ('<w:shd w:val="clear" w:fill="F0F0F0"/>' if c else "")
-        out += f'<w:r><w:rPr>{rpr}</w:rPr><w:t xml:space="preserve">{_x(t)}</w:t></w:r>'
-    return out
 
 
 def _p(contenido, estilo=None, ind=None, salto=False):
@@ -272,6 +299,25 @@ def a_docx(notas, destino, titulo_doc):
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
     WP = ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
     imagenes = []
+    enlaces = []
+    azul = '<w:color w:val="2F5496"/>'
+
+    def _runs(texto, extra=""):
+        out = ""
+        for t, b, i, c, ta, enlace in trozos(texto):
+            # orden exigido por Word: rFonts, b, i, strike, color, u, shd
+            rpr = (('<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/>' if c else "") + ("<w:b/>" if b else "")
+                   + ("<w:i/>" if i or "<w:i/>" in extra else "") + ("<w:strike/>" if ta else "")
+                   + (azul + '<w:u w:val="single"/>' if enlace else extra.replace("<w:i/>", ""))
+                   + ('<w:shd w:val="clear" w:fill="F0F0F0"/>' if c else ""))
+            run = f'<w:r><w:rPr>{rpr}</w:rPr><w:t xml:space="preserve">{_x(t)}</w:t></w:r>'
+            if enlace:
+                rid = f"rIdLink{len(enlaces) + 1}"
+                enlaces.append((rid, enlace))
+                run = f'<w:hyperlink r:id="{rid}">{run}</w:hyperlink>'
+            out += run
+        return out
+
     cuerpo = []
     for n, nota in enumerate(notas):
         cuerpo.append(_p(_runs(nota["titulo"]), "Title", salto=bool(n)))
@@ -301,6 +347,21 @@ def a_docx(notas, destino, titulo_doc):
                 cuerpo.append(_p(runs, "Codigo"))
             elif t == "cita":
                 cuerpo.append(_p(_runs(b["texto"]), "Quote"))
+            elif t == "tabla":
+                bordes = "".join(f'<w:{lado} w:val="single" w:sz="4" w:color="BFBFBF"/>'
+                                 for lado in ("top", "left", "bottom", "right", "insideH", "insideV"))
+                columnas = "<w:gridCol/>" * max(map(len, b["filas"]))
+                cuerpo.append(f'<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>'
+                              f'<w:tblBorders>{bordes}</w:tblBorders></w:tblPr><w:tblGrid>{columnas}</w:tblGrid>')
+                for k, fila in enumerate(b["filas"]):
+                    encabezado = k == 0 and b["encabezado"]
+                    fondo = '<w:shd w:val="clear" w:fill="E6ECF8"/>' if encabezado else ""
+                    cuerpo.append("<w:tr>")
+                    for celda in fila:
+                        parrafo = _p(_runs(celda), "EncabezadoTabla" if encabezado else None)
+                        cuerpo.append(f'<w:tc><w:tcPr><w:tcW w:w="0" w:type="auto"/>{fondo}</w:tcPr>{parrafo}</w:tc>')
+                    cuerpo.append("</w:tr>")
+                cuerpo.append("</w:tbl>")
             else:
                 cuerpo.append(_p(_runs(b["texto"])))
     documento = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document {W}{WP}><w:body>'
@@ -322,7 +383,6 @@ def a_docx(notas, destino, titulo_doc):
         return (f'<w:style w:type="{tipo}" w:styleId="{id_}"><w:name w:val="{nombre}"/><w:basedOn w:val="Normal"/>'
                 f'<w:qFormat/><w:pPr>{ppr}</w:pPr><w:rPr>{rpr}</w:rPr></w:style>')
 
-    azul = '<w:color w:val="2F5496"/>'
     estilos = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles {W}>'
                '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri" w:eastAsia="Calibri"/>'
                '<w:sz w:val="23"/><w:lang w:val="es-ES"/></w:rPr></w:rPrDefault>'
@@ -338,6 +398,7 @@ def a_docx(notas, destino, titulo_doc):
                + estilo("Heading3", "heading 3", '<w:b/><w:sz w:val="23"/>',
                         '<w:keepNext/><w:spacing w:before="160" w:after="40"/><w:outlineLvl w:val="2"/>')
                + estilo("Lista", "Lista", "", '<w:tabs><w:tab w:val="left" w:pos="0"/></w:tabs><w:spacing w:after="20"/>')
+               + estilo("EncabezadoTabla", "Encabezado de tabla", "<w:b/>")
                + estilo("Codigo", "Codigo", '<w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/><w:sz w:val="20"/>',
                         '<w:shd w:val="clear" w:fill="F3F3F3"/>')
                + estilo("Quote", "Quote", '<w:i/><w:color w:val="555555"/>',
@@ -367,6 +428,8 @@ def a_docx(notas, destino, titulo_doc):
                 '<Relationship Id="rIdF" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>'
                 + "".join(f'<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
                           f'relationships/image" Target="{ruta}"/>' for rid, ruta, _ in imagenes)
+                + "".join(f'<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                          f'relationships/hyperlink" Target="{html.escape(url)}" TargetMode="External"/>' for rid, url in enlaces)
                 + "</Relationships>")
     core = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
@@ -471,6 +534,16 @@ def a_txt(notas, destino, titulo_doc):
                 salida += ["    " + l for l in b["texto"].split("\n")]
             elif t == "cita":
                 salida.append("  | " + _plano(b["texto"]))
+            elif t == "tabla":
+                filas = [[_plano(celda) for celda in fila] for fila in b["filas"]]
+                anchos = [0] * max(map(len, filas))
+                for fila in filas:
+                    for i, celda in enumerate(fila):
+                        anchos[i] = max(anchos[i], len(celda))
+                for k, fila in enumerate(filas):
+                    salida.append(" | ".join(celda.ljust(ancho) for celda, ancho in zip(fila, anchos)))
+                    if k == 0 and b["encabezado"]:
+                        salida.append(" | ".join("-" * ancho for ancho in anchos[:len(fila)]))
             else:
                 salida.append(_plano(b["texto"]))
     destino = Path(destino)
@@ -482,6 +555,7 @@ def a_txt(notas, destino, titulo_doc):
 NS_ODF = ('xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
           'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" '
           'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" '
+          'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" '
           'xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" '
           'xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" '
           'xmlns:xlink="http://www.w3.org/1999/xlink" '
@@ -498,14 +572,24 @@ def _odt_texto(t):
 
 def _odt_runs(texto):
     out = ""
-    for t, b, i, c in trozos(texto):
-        estilo = "Tc" if c else {(True, True): "Tbi", (True, False): "Tb", (False, True): "Ti"}.get((b, i))
+    for t, b, i, c, ta, enlace in trozos(texto):
+        if enlace:
+            # Los enlaces usan un único estilo, sin combinarlo con los demás estilos de texto.
+            out += (f'<text:a xlink:href="{html.escape(enlace)}" xlink:type="simple">'
+                    f'<text:span text:style-name="Enlace">{_odt_texto(t)}</text:span></text:a>')
+            continue
+        estilo = "Tc" if c else {
+            (True, True, False): "Tbi", (True, False, False): "Tb", (False, True, False): "Ti",
+            (False, False, True): "Tt", (True, False, True): "Tbt", (False, True, True): "Tit",
+            (True, True, True): "Tbit",
+        }.get((b, i, ta))
         out += f'<text:span text:style-name="{estilo}">{_odt_texto(t)}</text:span>' if estilo else _odt_texto(t)
     return out
 
 
 def a_odt(notas, destino, titulo_doc):
     imagenes, cuerpo = [], []
+    tablas = 0
 
     def p(contenido, estilo="Standard"):
         cuerpo.append(f'<text:p text:style-name="{estilo}">{contenido}</text:p>')
@@ -543,6 +627,20 @@ def a_odt(notas, destino, titulo_doc):
                 p("<text:line-break/>".join(_odt_texto(l) for l in b["texto"].split("\n")), "Codigo")
             elif t == "cita":
                 p(_odt_runs(b["texto"]), "Cita")
+            elif t == "tabla":
+                tablas += 1
+                cuerpo.append(f'<table:table table:name="Tabla{tablas}" table:style-name="Tabla">')
+                cuerpo.append('<table:table-column table:style-name="ColumnaTabla"/>' * max(map(len, b["filas"])))
+                for k, fila in enumerate(b["filas"]):
+                    encabezado = k == 0 and b["encabezado"]
+                    celda_estilo = "CeldaEncabezado" if encabezado else "CeldaTabla"
+                    parrafo = "EncabezadoTabla" if encabezado else "Standard"
+                    cuerpo.append("<table:table-row>")
+                    for celda in fila:
+                        cuerpo.append(f'<table:table-cell table:style-name="{celda_estilo}" office:value-type="string">'
+                                      f'<text:p text:style-name="{parrafo}">{_odt_runs(celda)}</text:p></table:table-cell>')
+                    cuerpo.append("</table:table-row>")
+                cuerpo.append("</table:table>")
             else:
                 p(_odt_runs(b["texto"]))
 
@@ -551,23 +649,42 @@ def a_odt(notas, destino, titulo_doc):
         f'<style:paragraph-properties fo:margin-left="{0.6 + 0.6 * k:.1f}cm" fo:text-indent="-0.5cm" fo:margin-bottom="0.05cm">'
         f'<style:tab-stops><style:tab-stop style:position="0cm"/></style:tab-stops></style:paragraph-properties></style:style>'
         for k in range(6))
+    def estilo(nombre, visible, texto="", parrafo="", extra="", familia="paragraph"):
+        if familia != "paragraph":
+            return (f'<style:style style:name="{nombre}" style:family="{familia}">'
+                    f'<style:{familia}-properties {parrafo}/></style:style>')
+        return (f'<style:style style:name="{nombre}" style:display-name="{visible}" style:family="paragraph" '
+                f'style:parent-style-name="Standard"{extra}><style:paragraph-properties {parrafo}/>'
+                f'<style:text-properties {texto}/></style:style>')
+
+    borde = 'fo:border="0.5pt solid #BFBFBF" fo:padding="0.1cm"'
     contenido = (f'<?xml version="1.0" encoding="UTF-8"?><office:document-content {NS_ODF}><office:automatic-styles>'
                  '<style:style style:name="Salto" style:family="paragraph" style:parent-style-name="Titulo">'
                  '<style:paragraph-properties fo:break-before="page"/></style:style>'
                  '<style:style style:name="Tb" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style>'
                  '<style:style style:name="Ti" style:family="text"><style:text-properties fo:font-style="italic"/></style:style>'
                  '<style:style style:name="Tbi" style:family="text"><style:text-properties fo:font-weight="bold" fo:font-style="italic"/></style:style>'
+                 '<style:style style:name="Tt" style:family="text"><style:text-properties '
+                 'style:text-line-through-style="solid"/></style:style>'
+                 '<style:style style:name="Tbt" style:family="text"><style:text-properties '
+                 'fo:font-weight="bold" style:text-line-through-style="solid"/></style:style>'
+                 '<style:style style:name="Tit" style:family="text"><style:text-properties '
+                 'fo:font-style="italic" style:text-line-through-style="solid"/></style:style>'
+                 '<style:style style:name="Tbit" style:family="text"><style:text-properties '
+                 'fo:font-weight="bold" fo:font-style="italic" style:text-line-through-style="solid"/></style:style>'
                  '<style:style style:name="Tc" style:family="text"><style:text-properties '
                  'fo:font-family="Consolas" fo:background-color="#F0F0F0"/></style:style>'
+                 '<style:style style:name="Enlace" style:family="text"><style:text-properties '
+                 'fo:color="#2F5496" style:text-underline-style="solid" style:text-underline-type="single"/></style:style>'
                  '<style:style style:name="fr1" style:family="graphic"><style:graphic-properties '
                  'style:vertical-pos="top" style:vertical-rel="baseline"/></style:style>'
+                 + estilo("Tabla", "", parrafo='table:border-model="collapsing" table:align="margins"', familia="table")
+                 + estilo("ColumnaTabla", "", parrafo='style:rel-column-width="1*"', familia="table-column")
+                 + estilo("CeldaTabla", "", parrafo=borde, familia="table-cell")
+                 + estilo("CeldaEncabezado", "", parrafo=borde + ' fo:background-color="#E6ECF8"', familia="table-cell")
+                 + estilo("EncabezadoTabla", "Encabezado de tabla", 'fo:font-weight="bold"')
                  + listas + '</office:automatic-styles><office:body><office:text>'
                  + "".join(cuerpo) + "</office:text></office:body></office:document-content>")
-
-    def estilo(nombre, visible, texto="", parrafo="", extra=""):
-        return (f'<style:style style:name="{nombre}" style:display-name="{visible}" style:family="paragraph" '
-                f'style:parent-style-name="Standard"{extra}><style:paragraph-properties {parrafo}/>'
-                f'<style:text-properties {texto}/></style:style>')
 
     estilos = (f'<?xml version="1.0" encoding="UTF-8"?><office:document-styles {NS_ODF}><office:styles>'
                '<style:default-style style:family="paragraph"><style:paragraph-properties fo:margin-bottom="0.1cm" '

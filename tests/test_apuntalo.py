@@ -5,6 +5,7 @@ import unittest
 import xml.dom.minidom
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
@@ -119,7 +120,8 @@ class TestUtilidades(unittest.TestCase):
 
 
 class TestExportar(unittest.TestCase):
-    MD = ("# Título\nTexto con **negrita**, *cursiva* y `código`.\n- viñeta\n  - sub\n1. uno\n"
+    ENLACE = '[texto & más](<https://example.com/?a=1&b="2">)'
+    MD = ("# Título\nTexto con **negrita**, *cursiva*, ~~tachado~~ y `código`.\n- viñeta\n  - sub\n1. uno\n"
           "- [ ] tarea\n- [x] hecha\n> cita\n```\nprint(1)\n```\n![img](no-existe.png)\n")
 
     def nota(self):
@@ -130,6 +132,52 @@ class TestExportar(unittest.TestCase):
         tipos = [b["tipo"] for b in exportar.bloques(self.MD)]
         self.assertEqual(tipos, ["h1", "p", "ul", "ul", "ol", "tarea", "tarea", "cita", "codigo", "img"])
         self.assertEqual(exportar.bloques(self.MD)[3]["nivel"], 1)
+
+    def test_bloques_con_tablas(self):
+        md = "| Nombre | Grupo |\n{}| Ana |\n| --- | --- |\n\nFuera\n```\n| dentro |\n```"
+        for separador in ("", "| :--- | ---: |\n"):
+            with self.subTest(separador=separador):
+                tabla, parrafo, codigo = exportar.bloques(md.format(separador))
+                self.assertEqual(tabla, {"tipo": "tabla", "filas": [["Nombre", "Grupo"], ["Ana"]],
+                                         "encabezado": bool(separador)})
+                self.assertEqual(parrafo, {"tipo": "p", "texto": "Fuera"})
+                self.assertEqual(codigo, {"tipo": "codigo", "texto": "| dentro |"})
+
+    def test_tabla_html(self):
+        nota = dict(self.nota(), cuerpo="| Nombre | Grupo |\n| --- | --- |\n| *Ana* & Eva | A |")
+        h = exportar.a_html([nota], "Tabla")
+        self.assertIn("<table><tr><th>Nombre</th><th>Grupo</th></tr>"
+                      "<tr><td><em>Ana</em> &amp; Eva</td><td>A</td></tr></table>", h)
+
+    def test_tabla_docx_y_odt(self):
+        nota = dict(self.nota(), cuerpo="| Nombre | Grupo |\n| --- | --- |\n| *Ana* & Eva |")
+        for formato, archivo, etiqueta, fila, celda in (
+            ("docx", "word/document.xml", "w:tbl", "w:tr", "w:tc"),
+            ("odt", "content.xml", "table:table", "table:table-row", "table:table-cell"),
+        ):
+            with self.subTest(formato=formato), tempfile.TemporaryDirectory() as tmp:
+                destino = exportar.exportar_como(formato, [nota], Path(tmp) / f"a.{formato}", "Tabla")
+                with zipfile.ZipFile(destino) as z:
+                    for nombre in z.namelist():
+                        if nombre.endswith(".xml"):
+                            xml.dom.minidom.parseString(z.read(nombre))
+                    doc = z.read(archivo).decode("utf-8")
+                self.assertIn(f"<{etiqueta}", doc)
+                self.assertIn("Nombre", doc)
+                self.assertIn("Ana", doc)
+                self.assertIn("&amp; Eva", doc)
+                tabla, = xml.dom.minidom.parseString(doc).getElementsByTagName(etiqueta)
+                self.assertEqual([len(f.getElementsByTagName(celda)) for f in tabla.getElementsByTagName(fila)],
+                                 [2, 1])
+
+    def test_tabla_txt_y_md(self):
+        nota = dict(self.nota(), cuerpo="| **Id** | Nombre |\n| --- | --- |\n| 123 | Ana |\n| 4 |")
+        with tempfile.TemporaryDirectory() as tmp:
+            txt = exportar.a_txt([nota], Path(tmp) / "a.txt", "Tabla")
+            self.assertTrue(txt.read_text(encoding="utf-8").endswith(
+                "Id  | Nombre\n--- | ------\n123 | Ana   \n4\n"))
+            md = exportar.a_md([nota], Path(tmp) / "a.md", "Tabla")
+            self.assertTrue(md.read_text(encoding="utf-8").endswith(nota["cuerpo"] + "\n"))
 
     def test_listas_con_letras_romanos_y_flechas(self):
         b = exportar.bloques("1. uno\n  a. letra\n    i. romano\n→ flecha\n> 💡 Idea clave: x")
@@ -143,26 +191,52 @@ class TestExportar(unittest.TestCase):
         self.assertIn("<blockquote class=idea>", html)
 
     def test_trozos(self):
-        self.assertEqual(exportar.trozos("a **b** *c* `d`"),
-                         [("a ", False, False, False), ("b", True, False, False), (" ", False, False, False),
-                          ("c", False, True, False), (" ", False, False, False), ("d", False, False, True)])
+        self.assertEqual(exportar.trozos("a **b** *c* `d` ~~tachado~~"),
+                         [("a ", False, False, False, False, None), ("b", True, False, False, False, None),
+                          (" ", False, False, False, False, None), ("c", False, True, False, False, None),
+                          (" ", False, False, False, False, None), ("d", False, False, True, False, None),
+                          (" ", False, False, False, False, None), ("tachado", False, False, False, True, None)])
+        self.assertEqual(exportar.trozos("~~**a** *b* __*c*__ `d`~~"),
+                         [("a", True, False, False, True, None), (" ", False, False, False, True, None),
+                          ("b", False, True, False, True, None), (" ", False, False, False, True, None),
+                          ("c", True, True, False, True, None), (" ", False, False, False, True, None),
+                          ("d", False, False, True, True, None)])
+        self.assertEqual(exportar.trozos("[texto](https://example.com)"),
+                         [("texto", False, False, False, False, "https://example.com")])
+        self.assertEqual(exportar.trozos("**[texto](url)**"),
+                         [("texto", True, False, False, False, "url")])
+        self.assertEqual(exportar.trozos("[**texto**](url)"),
+                         [("**texto**", False, False, False, False, "url")])
 
     def test_html_escapa_y_da_formato(self):
-        h = exportar.a_html([self.nota()], "Física")
+        nota = dict(self.nota(), cuerpo=self.MD + f"~~**{self.ENLACE}**~~")
+        h = exportar.a_html([nota], "Física")
         self.assertIn("Clase &amp; &lt;1&gt;", h)
         self.assertIn("<strong>negrita</strong>", h)
         self.assertIn("<em>cursiva</em>", h)
+        self.assertIn("<s>tachado</s>", h)
         self.assertIn("[Adjunto: img]", h)
+        self.assertIn('<a href="https://example.com/?a=1&amp;b=&quot;2&quot;">'
+                      '<s><strong>texto &amp; más</strong></s></a>', h)
 
     def test_docx_valido(self):
         with tempfile.TemporaryDirectory() as tmp:
             destino = Path(tmp) / "a.docx"
-            exportar.a_docx([self.nota(), self.nota()], destino, "Física")
+            nota = dict(self.nota(), cuerpo=self.MD + f"~~**  *{self.ENLACE}*  **~~")
+            exportar.a_docx([nota, self.nota()], destino, "Física")
             with zipfile.ZipFile(destino) as z:
                 for nombre in z.namelist():
                     xml.dom.minidom.parseString(z.read(nombre))  # XML bien formado
                 doc = z.read("word/document.xml").decode("utf-8")
+                rels = z.read("word/_rels/document.xml.rels").decode("utf-8")
         self.assertIn("negrita", doc)
+        self.assertIn('<w:rPr><w:strike/></w:rPr><w:t xml:space="preserve">tachado</w:t>', doc)
+        self.assertIn('<w:hyperlink r:id="rIdLink1"><w:r><w:rPr><w:b/><w:i/><w:strike/>'
+                      '<w:color w:val="2F5496"/><w:u w:val="single"/></w:rPr>'
+                      '<w:t xml:space="preserve">texto &amp; más</w:t></w:r></w:hyperlink>', doc)
+        self.assertIn('<Relationship Id="rIdLink1" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                      'relationships/hyperlink" Target="https://example.com/?a=1&amp;b=&quot;2&quot;" '
+                      'TargetMode="External"/>', rels)
         self.assertIn('w:type="page"', doc)  # salto de página entre apuntes
         self.assertIn("Clase &amp; &lt;1&gt;", doc)
 
@@ -170,7 +244,7 @@ class TestExportar(unittest.TestCase):
         from apuntalo import portapapeles
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "foto.png").write_bytes(portapapeles.dib_a_png(dib_de_prueba(4000, 2)))
-            nota = dict(self.nota(), cuerpo="Antes\n![foto](<foto.png>)\nDespués\n", carpeta=tmp)
+            nota = dict(self.nota(), cuerpo=f"Antes\n![foto](<foto.png>)\nDespués\n{self.ENLACE}\n", carpeta=tmp)
             destino = Path(tmp) / "b.docx"
             exportar.a_docx([nota], destino, "Física")
             with zipfile.ZipFile(destino) as z:
@@ -183,6 +257,11 @@ class TestExportar(unittest.TestCase):
         self.assertIn('r:embed="rIdImg1"', doc)
         self.assertIn(f'cx="{exportar.ANCHO_UTIL_EMU}"', doc)  # imagen ancha: se ajusta a la página
         self.assertIn('Target="media/imagen1.png"', rels)
+        relaciones = xml.dom.minidom.parseString(rels).getElementsByTagName("Relationship")
+        ids = [r.getAttribute("Id") for r in relaciones]
+        self.assertIn("rIdImg1", ids)
+        self.assertIn("rIdLink1", ids)
+        self.assertEqual(len(ids), len(set(ids)))
 
     def _nota_con_foto(self, tmp):
         from apuntalo import portapapeles
@@ -192,7 +271,8 @@ class TestExportar(unittest.TestCase):
     def test_odt_valido(self):
         with tempfile.TemporaryDirectory() as tmp:
             destino = Path(tmp) / "a.odt"
-            exportar.a_odt([self._nota_con_foto(tmp), self.nota()], destino, "Física")
+            nota = dict(self.nota(), cuerpo=f"**{self.ENLACE}**")
+            exportar.a_odt([self._nota_con_foto(tmp), nota], destino, "Física")
             with zipfile.ZipFile(destino) as z:
                 self.assertEqual(z.namelist()[0], "mimetype")
                 self.assertEqual(z.getinfo("mimetype").compress_type, zipfile.ZIP_STORED)
@@ -202,11 +282,17 @@ class TestExportar(unittest.TestCase):
                 self.assertIn("Pictures/imagen1.png", z.namelist())
                 doc = z.read("content.xml").decode("utf-8")
         self.assertIn('text:style-name="Tb">negrita', doc)
+        self.assertIn('text:style-name="Tt">tachado</text:span>', doc)
+        self.assertIn('<style:style style:name="Tt" style:family="text"><style:text-properties '
+                      'style:text-line-through-style="solid"/>', doc)
         self.assertIn('text:style-name="Salto"', doc)   # salto de página entre apuntes
+        self.assertIn('<text:a xlink:href="https://example.com/?a=1&amp;b=&quot;2&quot;" xlink:type="simple">'
+                      '<text:span text:style-name="Enlace">texto &amp; más</text:span></text:a>', doc)
 
     def test_html_md_y_txt(self):
         with tempfile.TemporaryDirectory() as tmp:
             nota = self._nota_con_foto(tmp)
+            nota["cuerpo"] += self.ENLACE + "\n"
             h = exportar.a_html_archivo([nota], Path(tmp) / "a.html", "Física").read_text(encoding="utf-8")
             self.assertIn("data:image/png;base64,", h)       # imagen dentro del archivo
             Path(tmp, "sal").mkdir()
@@ -215,9 +301,12 @@ class TestExportar(unittest.TestCase):
             self.assertTrue(texto.startswith("# Clase & <1>\n"))
             self.assertIn("## Título", texto)                 # los títulos bajan un nivel
             self.assertIn("](<a_archivos/foto.png>)", texto)
+            self.assertIn(self.ENLACE, texto)
             self.assertTrue(Path(tmp, "sal", "a_archivos", "foto.png").is_file())
             txt = exportar.a_txt([nota], Path(tmp) / "a.txt", "F").read_text(encoding="utf-8")
             self.assertIn("negrita", txt)
+            self.assertIn("tachado", txt)
+            self.assertNotIn("~~", txt)
             self.assertNotIn("**", txt)
             self.assertIn("[x] hecha", txt)
 
@@ -367,6 +456,46 @@ class TestVentana(TemporalMixin, unittest.TestCase):
         self.assertIn("**mundo**", self.app.texto.get("1.0", "end"))
         self.assertEqual(self.app.titulo.get(), "Clase 3")
 
+    def test_teclas_de_tabla(self):
+        cuerpo = "| Nombre | Nota |\n| --- | --- |\n| Ana | 9 |"
+        ruta = ap.NOTAS / "Tabla.md"
+        ap.escribir_nota(ruta, "Tabla", [], "2026-11-09 10:00", cuerpo)
+        self.app.cargar(ruta)
+        t = self.app.texto
+        t.mark_set("insert", "1.4")
+        self.assertEqual(self.app._tecla_tab(atras=False), "break")
+        self.assertEqual(t.index("insert"), "1.11")
+        self.assertEqual(self.app._tecla_tab(atras=False), "break")
+        self.assertEqual(t.index("insert"), "3.2")
+        self.assertEqual(self.app._tecla_tab(atras=True), "break")
+        self.assertEqual(t.index("insert"), "1.11")
+        self.assertEqual(self.app._tecla_enter(), "break")
+        self.assertEqual(t.index("insert"), "3.2")
+        self.assertEqual(self.app._tecla_enter(), "break")
+        self.assertEqual(t.index("insert"), "4.2")
+        self.assertEqual(t.get("1.0", "end-1c"), cuerpo + "\n| | |")
+
+    def test_insertar_tabla_se_deshace_en_un_paso(self):
+        from unittest import mock
+        cuerpo = "Antes\nDespués"
+        ruta = ap.NOTAS / "Texto.md"
+        ap.escribir_nota(ruta, "Texto", [], "2026-11-09 10:00", cuerpo)
+        self.app.cargar(ruta)
+        t = self.app.texto
+        t.mark_set("insert", "1.2")
+        with mock.patch.object(ap.simpledialog, "askinteger", side_effect=[2, 3]):
+            self.app.insertar_tabla()
+        self.assertEqual(t.get("1.0", "end-1c"),
+                         "Antes\n\n| | |\n| --- | --- |\n| | |\n| | |\n\nDespués")
+        self.assertEqual(t.index("insert"), "3.2")
+        t.edit_undo()
+        self.assertEqual(t.get("1.0", "end-1c"), cuerpo)
+        with mock.patch.object(ap.simpledialog, "askinteger", side_effect=[1, 1]):
+            t.mark_set("insert", "2.end")
+            self.app.insertar_tabla()
+        self.assertEqual(t.get("1.0", "end-1c"), cuerpo + "\n\n| |\n")
+        self.assertEqual(t.index("insert"), "4.2")
+
     def test_listas_flechas_y_palabras(self):
         from unittest import mock
         with mock.patch.object(ap.simpledialog, "askstring", return_value="Listas"):
@@ -407,6 +536,114 @@ class TestVentana(TemporalMixin, unittest.TestCase):
         self.app.alternar_tema()
         self.assertTrue(self.app.oscuro)
         self.app.alternar_tema()
+
+    def test_mayusculas_auto(self):
+        ruta = ap.NOTAS / "Mayúsculas.md"
+        ap.escribir_nota(ruta, "Mayúsculas", [], "2026-11-09 10:00", "Hola. Mundo")
+        self.app.cargar(ruta)
+        t = self.app.texto
+        t.mark_set("insert", "1.6")
+        tecla = SimpleNamespace(char="h")
+        self.assertEqual(self.app._tecla_general(tecla), "break")
+        self.assertEqual(t.get("1.6", "1.7"), "H")
+        t.edit_undo()
+        t.mark_set("insert", "1.6")
+        antes = t.get("1.0", "end-1c")
+        self.assertEqual(t.get("1.0", "1.end"), "Hola. Mundo")
+        self.app.cfg["mayusculas_auto"] = False
+        self.assertIsNone(self.app._tecla_general(tecla))
+        self.assertEqual(t.get("1.0", "end-1c"), antes)
+        self.app.cfg["mayusculas_auto"] = True
+        t.tag_add("sel", "1.6", "1.end")
+        self.assertIsNone(self.app._tecla_general(tecla))
+        self.assertEqual(t.get("1.0", "end-1c"), antes)
+
+    def test_cierre_automatico(self):
+        ruta = ap.NOTAS / "Pares.md"
+        ap.escribir_nota(ruta, "Pares", [], "2026-11-09 10:00", "")
+        self.app.cargar(ruta)
+        t = self.app.texto
+        abrir = SimpleNamespace(char="(")
+        self.assertEqual(self.app._tecla_general(abrir), "break")
+        self.assertEqual(t.get("1.0", "end-1c"), "()")
+        self.assertEqual(t.index("insert"), "1.1")
+        self.assertEqual(self.app._tecla_general(SimpleNamespace(char=")")), "break")
+        self.assertEqual(t.get("1.0", "end-1c"), "()")
+        self.assertEqual(t.index("insert"), "1.2")
+        t.edit_undo()
+        self.assertEqual(t.get("1.0", "end-1c"), "")
+
+        self.assertEqual(self.app._tecla_general(abrir), "break")
+        self.assertEqual(self.app._tecla_retroceso(), "break")
+        self.assertEqual(t.get("1.0", "end-1c"), "")
+        self.assertEqual(self.app._tecla_general(SimpleNamespace(char="¿")), "break")
+        self.assertEqual(self.app._tecla_general(SimpleNamespace(char="q")), "break")
+        self.assertEqual(t.get("1.0", "end-1c"), "¿Q?")
+
+        t.delete("1.0", "end")
+        t.insert("1.0", "texto")
+        t.tag_add("sel", "1.0", "1.end")
+        self.assertEqual(self.app._tecla_general(abrir), "break")
+        self.assertEqual(t.get("1.0", "end-1c"), "(texto)")
+        self.assertEqual(t.get("sel.first", "sel.last"), "texto")
+        t.edit_undo()
+        self.assertEqual(t.get("1.0", "end-1c"), "texto")
+        t.tag_remove("sel", "1.0", "end")
+        self.app.cfg["cierre_automatico"] = False
+        self.assertIsNone(self.app._tecla_general(abrir))
+        self.assertEqual(t.get("1.0", "end-1c"), "texto")
+
+    def test_espacio_corrige_tilde_antes_de_puntuacion(self):
+        from tests.test_ortografia import Falso
+
+        ruta = ap.NOTAS / "Tildes.md"
+        ap.escribir_nota(ruta, "Tildes", [], "2026-11-09 10:00", "aqui.")
+        self.app.cargar(ruta)
+        self.app._corr = Falso()
+        t = self.app.texto
+        t.mark_set("insert", "1.end")
+        self.assertIsNone(self.app._tecla_espacio())
+        self.assertEqual(t.get("1.0", "1.end"), "aquí.")
+        self.assertEqual(t.index("insert"), "1.5")
+
+    def test_tachado(self):
+        ruta = ap.NOTAS / "Atajos.md"
+        ap.escribir_nota(ruta, "Atajos", [], "2026-11-09 10:00", "texto")
+        self.app.cargar(ruta)
+        t = self.app.texto
+        t.tag_add("sel", "1.0", "1.end")
+        self.assertEqual(self.app._envolver("~~"), "break")
+        self.app.resaltar()
+        self.assertEqual(t.get("1.0", "end-1c").rstrip("\n"), "~~texto~~")
+        self.assertEqual(tuple(map(str, t.tag_ranges("tachado"))), ("1.0", "1.9"))
+        t.delete("1.0", "1.2")
+        self.app.resaltar()
+        self.assertFalse(t.tag_ranges("tachado"))
+
+    def test_mayus_supr_borra_palabra(self):
+        from unittest import mock
+        with mock.patch.object(ap.simpledialog, "askstring", return_value="Atajos"):
+            self.app.nueva()
+        t = self.app.texto
+        t.delete("1.0", "end")
+        t.insert("1.0", "Hola mundo otra vez")
+        t.mark_set("insert", "1.5")
+        self.assertEqual(self.app._tecla_mayus_supr(), "break")
+        self.assertEqual(t.get("1.0", "end-1c"), "Hola otra vez")
+
+    def test_mayus_supr_corta_seleccion(self):
+        from unittest import mock
+        with mock.patch.object(ap.simpledialog, "askstring", return_value="Atajos"):
+            self.app.nueva()
+        self.app.cfg["mayus_supr_corta"] = True
+        t = self.app.texto
+        t.delete("1.0", "end")
+        t.insert("1.0", "Hola mundo")
+        t.tag_add("sel", "1.4", "1.end")
+        self.app.clipboard_clear()
+        self.assertEqual(self.app._tecla_mayus_supr(), "break")
+        self.assertEqual(t.get("1.0", "end-1c"), "Hola")
+        self.assertEqual(self.app.clipboard_get(), " mundo")
 
     def test_tamano_de_letra(self):
         self.app.cambiar_letra(+3)

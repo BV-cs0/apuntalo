@@ -80,6 +80,16 @@ def igualar_mayusculas(original, sugerencia):
     return sugerencia
 
 
+def correccion_tilde(corrector, palabra):
+    """Devuelve la corrección si la palabra solo falla por una tilde (aqui → aquí)."""
+    if not corrector or corrector.correcta(palabra):
+        return None
+    for s in corrector.sugerencias(palabra, maximo=3):
+        if s != palabra and _sin_tildes(s) == _sin_tildes(palabra):
+            return igualar_mayusculas(palabra, s)
+    return None
+
+
 # ---------- Windows: Spell Checking API por COM con ctypes ----------
 class _GUID(ctypes.Structure):
     _fields_ = [("a", ctypes.c_uint32), ("b", ctypes.c_uint16), ("c", ctypes.c_uint16), ("d", ctypes.c_ubyte * 8)]

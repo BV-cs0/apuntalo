@@ -10,10 +10,14 @@ from apuntalo import ortografia as o  # noqa: E402
 class Falso:
     """Corrector de mentira: conoce unas pocas palabras."""
     BUENAS = {"una", "vez", "encontrado", "el", "exploit", "generalmente", "hay", "que", "editarlo", "y", "ok",
-              "usuario", "podemos", "ver"}
+              "usuario", "podemos", "ver", "aquí"}
 
     def correcta(self, p):
         return p.lower() in self.BUENAS
+
+    def sugerencias(self, p, maximo=6):
+        return {"aqui": ["aquí"], "áqui": ["aquí"],
+                "generalemnte": ["generalmente"]}.get(p.lower(), [])[:maximo]
 
     def __bool__(self):
         return True
@@ -42,6 +46,20 @@ class TestPalabras(unittest.TestCase):
     def test_mayusculas_de_la_sugerencia(self):
         self.assertEqual(o.igualar_mayusculas("Poodemos", "podemos"), "Podemos")
         self.assertEqual(o.igualar_mayusculas("HOLAA", "hola"), "HOLA")
+
+    def test_correccion_tilde(self):
+        self.assertEqual(o.correccion_tilde(Falso(), "aqui"), "aquí")
+        self.assertEqual(o.correccion_tilde(Falso(), "áqui"), "aquí")
+
+    def test_correccion_tilde_salta_palabras_correctas(self):
+        self.assertIsNone(o.correccion_tilde(Falso(), "aquí"))
+
+    def test_correccion_tilde_salta_otras_faltas(self):
+        self.assertIsNone(o.correccion_tilde(Falso(), "generalemnte"))
+
+    def test_correccion_tilde_conserva_mayusculas(self):
+        self.assertEqual(o.correccion_tilde(Falso(), "Aqui"), "Aquí")
+        self.assertEqual(o.correccion_tilde(Falso(), "AQUI"), "AQUÍ")
 
     def test_corrector_real_si_lo_hay(self):
         c = o.Corrector()
@@ -81,6 +99,33 @@ class TestVentanaOrtografia(unittest.TestCase):
             self.assertEqual(a.texto.get("1.0", "1.end"), "podemos ver el exploit")
             a.texto.edit_undo()
             self.assertEqual(a.texto.get("1.0", "1.end"), "poodemos ver el exploit")
+        finally:
+            a.destroy()
+
+    def test_espacio_corrige_tilde(self):
+        d = tempfile.mkdtemp()
+        (Path(d) / "notas").mkdir()
+        (Path(d) / "notas" / "P.md").write_text("---\ntitulo: P\netiquetas: \ncreado: x\n---\n"
+                                                "Podemos ver aqui", encoding="utf-8")
+        from apuntalo import app as ap
+        antes = (ap.BASE, ap.NOTAS, ap.ADJUNTOS, ap.CONFIG)
+        ap.BASE, ap.NOTAS = Path(d), Path(d) / "notas"
+        ap.ADJUNTOS, ap.CONFIG = ap.NOTAS / "_adjuntos", Path(d) / "config.json"
+        self.addCleanup(lambda: setattr(ap, "BASE", antes[0]) or setattr(ap, "NOTAS", antes[1])
+                        or setattr(ap, "ADJUNTOS", antes[2]) or setattr(ap, "CONFIG", antes[3]))
+        a = ap.App()
+        try:
+            a.update()
+            a.cargar(ap.NOTAS / "P.md")
+            a._corr = Falso()
+            a.texto.mark_set("insert", "1.end")
+            a.texto.focus_force()
+            a.update()
+            a.texto.event_generate("<space>")
+            a.update_idletasks()
+            self.assertEqual(a.texto.get("1.0", "1.end"), "Podemos ver aquí ")
+            a.texto.edit_undo()
+            self.assertEqual(a.texto.get("1.0", "1.end"), "Podemos ver aqui")
         finally:
             a.destroy()
 

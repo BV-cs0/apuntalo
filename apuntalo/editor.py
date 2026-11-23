@@ -7,6 +7,12 @@ import re
 from dataclasses import dataclass
 
 SANGRIA = "  "   # un nivel de lista (el mismo que usan importar y exportar)
+RE_FILA_TABLA = re.compile(r"\|.*\|\s*$")
+
+# La comilla simple se usa como apóstrofo, * _ ~ tienen atajos de Markdown
+# y la tilde invertida es una tecla muerta en teclados españoles.
+PARES = {"(": ")", "[": "]", "{": "}", '"': '"', "¿": "?", "¡": "!", "«": "»"}
+CIERRES = set(PARES.values())
 
 ROMANO = r"(?=[ivx])x{0,3}(?:ix|iv|v?i{0,3})"
 RE_ITEM = re.compile(
@@ -110,6 +116,49 @@ def _ancho_sangria(linea):
 def en_codigo(lineas, fila):
     """¿Está la línea dentro de un bloque ``` ... ```?"""
     return sum(1 for l in lineas[:fila] if l.strip().startswith("```")) % 2 == 1
+
+
+def accion_par(linea, col, caracter):
+    """¿Conviene saltar un cierre existente o insertar un par?
+
+    accion_par("Hola ", 5, "(") → "par"
+    accion_par("()", 1, ")") → "saltar"
+    accion_par("Hola", 0, "(") → None
+    """
+    despues = linea[col:col + 1]
+    if caracter in CIERRES and despues == caracter:
+        return "saltar"
+    if caracter in PARES and (not despues or despues.isspace() or despues in CIERRES):
+        if caracter != '"' or not linea[col - 1:col].isalnum():
+            return "par"
+    return None
+
+
+def borra_par(linea, col):
+    """¿Está el cursor entre los dos caracteres de un par vacío?
+
+    borra_par("()", 1) → True
+    borra_par("(x)", 1) → False
+    """
+    return col > 0 and PARES.get(linea[col - 1]) == linea[col:col + 1]
+
+
+def necesita_mayuscula(lineas, fila, col):
+    """¿La letra que se va a escribir en (fila, col) debe salir en mayúscula?
+
+    Al principio de una línea (justo después de Intro) o después de «.», «!» o «?»
+    con uno o más espacios en blanco, aunque sigan signos de apertura.
+    No dentro de un bloque de código.
+    No distingue abreviaturas («Dr. » también cuenta) ni detecta el inicio de
+    elementos de lista o celdas de tabla («1. » coincide por el punto).
+
+    necesita_mayuscula(["Hola. "], 0, 6) → True
+    necesita_mayuscula(["Hola mundo"], 0, 5) → False
+    """
+    if en_codigo(lineas, fila):
+        return False
+    antes = lineas[fila][:col].rstrip("".join(PARES))
+    return not antes or bool(re.search(r"[.!?]\s+$", antes))
 
 
 # ---------- numeración ----------
@@ -261,6 +310,65 @@ def retroceso(lineas, fila, col, sangrar=True):
     if fila + 1 < len(lineas) and analizar(lineas[fila + 1]):
         lineas = renumerar(lineas, fila + 1)
     return lineas, fila, len(it.sangria)
+
+
+# ---------- tablas ----------
+def _celdas(linea):
+    """Pares (inicio, fin) del texto entre barras: «| a | b |» → [(1, 4), (5, 8)]."""
+    barras = [i for i, c in enumerate(linea) if c == "|"]
+    return [(izq + 1, der) for izq, der in zip(barras, barras[1:])]
+
+
+def _separador_tabla(linea, celdas):
+    """¿Es una fila separadora como «| --- | :---: |»?"""
+    return all(re.fullmatch(r":?-+:?", linea[ini:fin].strip()) for ini, fin in celdas)
+
+
+def _inicio_celda(linea, celda):
+    ini, fin = celda
+    texto = linea[ini:fin]
+    return fin - len(texto.lstrip())
+
+
+def _mover_tabla(lineas, fila, col, atras, cambiar_fila):
+    if not RE_FILA_TABLA.match(lineas[fila]) or en_codigo(lineas, fila):
+        return None
+    linea = lineas[fila]
+    celdas = _celdas(linea)
+    columnas = len(celdas)
+    paso = -1 if atras else 1
+    if not cambiar_fila and not _separador_tabla(linea, celdas):
+        actual = next((i for i, (_, fin) in enumerate(celdas) if col <= fin), len(celdas) - 1)
+        destino = actual + paso
+        if 0 <= destino < len(celdas):
+            return lineas, fila, _inicio_celda(linea, celdas[destino])
+
+    fila += paso
+    while 0 <= fila < len(lineas) and RE_FILA_TABLA.match(lineas[fila]):
+        linea = lineas[fila]
+        celdas = _celdas(linea)
+        if not _separador_tabla(linea, celdas):
+            return lineas, fila, _inicio_celda(linea, celdas[-1 if atras else 0])
+        fila += paso
+    if atras:
+        return None
+    nueva = "| " * columnas + "|"
+    return lineas[:fila] + [nueva] + lineas[fila:], fila, 2
+
+
+def tabla_tab(lineas, fila, col, atras=False):
+    """Tab / Mayús+Tab en una tabla: pasa a la celda siguiente / anterior.
+
+    En «| a | b |», Tab desde «a» lleva a «b». Desde «b» pasa a la fila siguiente
+    o añade «| | |» si está al final. Devuelve (líneas, fila, columna), o None."""
+    return _mover_tabla(lineas, fila, col, atras, cambiar_fila=False)
+
+
+def tabla_enter(lineas, fila, col):
+    """Enter en «| a | b |» lleva a la primera celda de la fila siguiente, incluso desde «a».
+
+    Si está al final añade una fila. Devuelve (líneas, fila, columna), o None fuera de una tabla."""
+    return _mover_tabla(lineas, fila, col, atras=False, cambiar_fila=True)
 
 
 # ---------- palabras ----------
