@@ -43,6 +43,8 @@ Hay dos formas. Elige la que te resulte más cómoda.
 2. Guárdalo en una carpeta tuya (por ejemplo, `Documentos\Apuntes`).
 3. **Ábrelo como administrador**: clic derecho en `Apuntalo.exe` → **Ejecutar como administrador**. Es necesario para que todas las funciones (atajos globales, captura de pantalla y subtítulos en directo) funcionen bien. Tus apuntes se guardan en `notas/`, al lado del `.exe`, así que puedes llevarlo en un pendrive.
 
+La primera vez que lo abres, Apúntalo deja un acceso directo en el Escritorio y en el menú Inicio (apuntando a ese `.exe`, sin moverlo ni copiarlo), para que luego no tengas que volver a buscar la carpeta. Y cada vez que haya una versión nueva, te avisa con un pequeño aviso 🔔 arriba a la derecha de la ventana: haz clic para ir a la página de descargas.
+
 > ⚠️ **Es necesario ejecutar Apúntalo como administrador.** Para no tener que hacerlo cada vez: clic derecho en `Apuntalo.exe` → *Propiedades* → *Compatibilidad* → marca **«Ejecutar este programa como administrador»** → *Aceptar*.
 
 Al abrirlo puede pasar esto:

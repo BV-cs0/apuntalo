@@ -43,7 +43,7 @@ Issues = "https://github.com/BV-cs0/apuntalo/issues"
 packages = ["apuntalo"]
 
 [tool.setuptools.package-data]
-apuntalo = ["captura.ps1", "apuntalo.ico"]
+apuntalo = ["captura.ps1", "crear_acceso.ps1", "apuntalo.ico"]
 
 [tool.setuptools.dynamic]
 version = { attr = "apuntalo.__version__" }
