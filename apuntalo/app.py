@@ -2424,15 +2424,16 @@ def _reabrir_como_admin() -> bool:
         if shell.IsUserAnAdmin():
             return False
         if getattr(sys, "frozen", False):
-            programa, args = sys.executable, sys.argv[1:]
+            # No la carpeta temporal del .exe: si la copia con permisos trabaja ahí, no se puede borrar al salir.
+            programa, args, carpeta = sys.executable, sys.argv[1:], Path(sys.executable).parent
         else:
             ventana = Path(sys.executable).with_name("pythonw.exe")
             programa = str(ventana if ventana.is_file() else sys.executable)
             # El proceso con permisos no hereda las variables de entorno: la carpeta de datos va en la orden.
-            args = ["-m", "apuntalo", f"--datos={BASE}", *sys.argv[1:]]
+            args, carpeta = ["-m", "apuntalo", f"--datos={BASE}", *sys.argv[1:]], PAQUETE.parent
         shell.ShellExecuteW.restype = ctypes.c_void_p
         r = shell.ShellExecuteW(None, "runas", programa, subprocess.list2cmdline([*args, "--elevada"]),
-                                str(PAQUETE.parent), 1)
+                                str(carpeta), 1)
         return (r or 0) > 32
     except Exception:
         return False

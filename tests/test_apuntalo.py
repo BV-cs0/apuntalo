@@ -806,6 +806,15 @@ class TestAdministrador(unittest.TestCase):
             self.assertFalse(reabierta)
             ejecutar.assert_not_called()
 
+    def test_exe_trabaja_en_su_carpeta_no_en_la_temporal(self):
+        from unittest import mock
+        with mock.patch.object(ap.sys, "frozen", True, create=True), \
+                mock.patch.object(ap.sys, "executable", r"C:\Apps\Apuntalo.exe"):
+            reabierta, ejecutar = self._reabrir([r"C:\Apps\Apuntalo.exe"])
+        self.assertTrue(reabierta)
+        _, _, programa, args, carpeta, _ = ejecutar.call_args.args
+        self.assertEqual((programa, args, carpeta), (r"C:\Apps\Apuntalo.exe", "--elevada", r"C:\Apps"))
+
     def test_si_dicen_que_no_se_abre_sin_permisos(self):
         reabierta, _ = self._reabrir(["apuntes.pyw"], respuesta=5)    # SE_ERR_ACCESSDENIED
         self.assertFalse(reabierta)
