@@ -2401,7 +2401,8 @@ class App(tk.Tk):
 def _crear_accesos_si_hace_falta() -> bool:
     """La primera vez que se abre Apuntalo.exe, crea su acceso directo en el Escritorio y en el
     menú Inicio (apuntando a donde esté el .exe, sin moverlo). No hace nada en las demás formas
-    de instalar la app, ni si ya se intentó antes (haya funcionado o no)."""
+    de instalar la app. Si algún destino falla (por ejemplo, Windows todavía analizando el
+    script la primera vez), no lo marca como hecho: lo reintenta en el próximo arranque."""
     if not getattr(sys, "frozen", False):
         return False
     cfg = cargar_config()
@@ -2409,8 +2410,9 @@ def _crear_accesos_si_hace_falta() -> bool:
         return False
     destinos = [carpeta_windows(0x10, "Desktop"), carpeta_windows(0x02, "Start Menu\\Programs")]
     creado = accesos.crear_accesos_directos(destinos, Path(sys.executable).resolve())
-    cfg["acceso_directo_creado"] = True   # no se reintenta en cada arranque aunque haya fallado
-    guardar_config(cfg)
+    if creado:
+        cfg["acceso_directo_creado"] = True
+        guardar_config(cfg)
     return creado
 
 

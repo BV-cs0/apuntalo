@@ -27,9 +27,11 @@ def _crear_uno(destino: Path, objetivo: Path) -> bool:
 
 def crear_accesos_directos(destinos: list[Path], objetivo: Path) -> bool:
     """Crea un acceso directo a `objetivo` (el .exe) en cada carpeta de `destinos`.
-    Solo hace algo en Windows. Si una carpeta falla no deja de intentar las demás, y si
-    fallan todas no interrumpe el arranque de la app: solo devuelve False."""
+    Solo hace algo en Windows. Si una carpeta falla no deja de intentar las demás.
+    Devuelve True solo si TODAS tuvieron éxito: un fallo suele ser puntual (por ejemplo,
+    Windows analizando el .ps1 recién creado la primera vez), así que quien llame a esto
+    debe poder reintentar en el próximo arranque los destinos que fallaron."""
     if sys.platform != "win32":
         return False
     resultados = [_crear_uno(destino / "Apúntalo.lnk", objetivo) for destino in destinos]
-    return any(resultados)
+    return all(resultados)

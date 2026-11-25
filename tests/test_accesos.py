@@ -23,8 +23,18 @@ class TestAccesosDirectos(unittest.TestCase):
         with patch.object(accesos.sys, "platform", "win32"):
             resultado = accesos.crear_accesos_directos(
                 [tmp / "escritorio_prueba", tmp / "inicio_prueba"], Path(__file__))
+        self.assertEqual(run_mock.call_count, 2)   # intenta el segundo aunque el primero falle...
+        self.assertFalse(resultado)                # ...pero si uno falla, no cuenta como éxito completo
+
+    @patch("apuntalo.accesos.subprocess.run")
+    def test_exito_solo_si_todos_los_destinos_funcionan(self, run_mock):
+        run_mock.return_value = None
+        tmp = Path(tempfile.gettempdir())
+        with patch.object(accesos.sys, "platform", "win32"):
+            resultado = accesos.crear_accesos_directos(
+                [tmp / "escritorio_prueba", tmp / "inicio_prueba"], Path(__file__))
         self.assertEqual(run_mock.call_count, 2)
-        self.assertTrue(resultado)   # el segundo destino sí tuvo éxito
+        self.assertTrue(resultado)
 
     @patch("apuntalo.accesos.subprocess.run", side_effect=OSError("powershell no disponible"))
     def test_si_powershell_no_esta_disponible_no_lanza_excepcion(self, run_mock):
