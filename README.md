@@ -11,7 +11,7 @@
 ## Qué hace
 
 - **Apuntes organizados**: una carpeta por asignatura, un apunte por clase, con etiquetas y buscador. Cada apunte es un archivo Markdown (`.md`) normal, así que tus apuntes son tuyos y se abren con cualquier editor.
-- **Encima del vídeo de la clase**: la ventana se puede fijar siempre encima (📌), hacerse pequeña y semitransparente (🗗 Compacto), y mostrarse u ocultarse desde cualquier programa con **Ctrl+Alt+A**. Fijada sobre un vídeo a pantalla completa, puede esconder la barra de tareas de Windows mientras escribes (clic derecho en 📌).
+- **Encima del vídeo de la clase**: la ventana se puede fijar siempre encima (📌), hacerse pequeña y semitransparente (🗗 Compacto; con el ratón encima se ve entera), y mostrarse u ocultarse desde cualquier programa con **Ctrl+Alt+A**. Fijada sobre un vídeo a pantalla completa, puede esconder la barra de tareas de Windows mientras escribes (clic derecho en 📌).
 - **Listas y esquemas como en Canva**: numeración automática con subniveles `a.` e `i.`, flechas (`->` da →), bloques de color (💡 idea, ⚠ ojo, ✅ resumen...) y **modo oscuro** (botón ☾). El título sale grande y centrado, y los comandos entre `comillas` en un recuadro.
 - **✓ Corrector en español e inglés**: subraya en rojo las faltas mientras escribes y, con **F7**, te pregunta «¿Quieres corregir estas palabras?» con la sugerencia de cada una. No marca el código, los enlaces ni las siglas.
 - **🤖 Apuntes automáticos**:
@@ -41,11 +41,9 @@ Hay dos formas. Elige la que te resulte más cómoda.
 
 1. Descarga `Apuntalo.exe` desde [**Releases**](https://github.com/BV-cs0/apuntalo/releases/latest).
 2. Guárdalo en una carpeta tuya (por ejemplo, `Documentos\Apuntes`).
-3. **Ábrelo como administrador**: clic derecho en `Apuntalo.exe` → **Ejecutar como administrador**. Es necesario para que todas las funciones (atajos globales, captura de pantalla y subtítulos en directo) funcionen bien. Tus apuntes se guardan en `notas/`, al lado del `.exe`, así que puedes llevarlo en un pendrive.
+3. Ábrelo con doble clic. Windows te preguntará si quieres que haga cambios en el equipo: pulsa **Sí**. Apúntalo pide permisos de administrador solo, para que todas las funciones (atajos globales, captura de pantalla y subtítulos en directo) funcionen bien. Si pulsas *No*, se abre igual, sin esos permisos. Tus apuntes se guardan en `notas/`, al lado del `.exe`, así que puedes llevarlo en un pendrive.
 
 La primera vez que lo abres, Apúntalo deja un acceso directo en el Escritorio y en el menú Inicio (apuntando a ese `.exe`, sin moverlo ni copiarlo), para que luego no tengas que volver a buscar la carpeta. Y cada vez que haya una versión nueva, te avisa con un pequeño aviso 🔔 arriba a la derecha de la ventana: haz clic para ir a la página de descargas.
-
-> ⚠️ **Es necesario ejecutar Apúntalo como administrador.** Para no tener que hacerlo cada vez: clic derecho en `Apuntalo.exe` → *Propiedades* → *Compatibilidad* → marca **«Ejecutar este programa como administrador»** → *Aceptar*.
 
 Al abrirlo puede pasar esto:
 - Windows avisa con «Windows protegió su PC» porque el programa no está firmado: pulsa *Más información* → *Ejecutar de todas formas*.
@@ -61,14 +59,14 @@ Necesitas [Python 3.10 o superior](https://www.python.org/downloads/). Al instal
 py -m pip install apuntalo
 ```
 
-Para abrirlo, escribe `py -m apuntalo` en una terminal **abierta como administrador** (o solo `apuntalo`, si Windows no lo bloquea). Tus apuntes se guardan en `Documentos\Apuntalo`.
+Para abrirlo, escribe `py -m apuntalo` (o solo `apuntalo`) y pulsa **Sí** cuando Windows pida permisos de administrador. Tus apuntes se guardan en `Documentos\Apuntalo`.
 
 - Para el resumen con Claude: `py -m pip install "apuntalo[claude]"`.
 - Para actualizar a la última versión: `py -m pip install -U apuntalo`.
 
 ### Opción 3: desde el código
 
-Descarga el código y abre **`Abrir apuntes.bat`** con clic derecho → *Ejecutar como administrador*. Los apuntes se guardan en la propia carpeta del proyecto.
+Descarga el código, abre **`Abrir apuntes.bat`** y pulsa **Sí** cuando Windows pida permisos de administrador. Los apuntes se guardan en la propia carpeta del proyecto.
 
 > En las tres opciones puedes elegir otra carpeta para los apuntes con la variable de entorno `APUNTALO_DATOS`.
 

@@ -759,6 +759,62 @@ class TestVentana(TemporalMixin, unittest.TestCase):
         self.app.cambiar_letra(0)
         self.assertEqual(self.app.tam_letra, 12)
 
+    def test_opaca_con_el_raton_encima(self):
+        from unittest import mock
+        alpha = lambda: round(float(self.app.attributes("-alpha")), 2)  # noqa: E731
+        dentro = {"si": True}
+        with mock.patch.object(self.app, "winfo_viewable", return_value=True), \
+                mock.patch.object(self.app, "_raton_dentro", side_effect=lambda: dentro["si"]):
+            self.app.opacidad.set(0.4)
+            self.app.aplicar_opacidad()          # moviendo la barra: se ve la opacidad elegida
+            self.app._opaca_con_raton()
+            self.assertEqual(alpha(), 0.4)
+            dentro["si"] = False
+            self.app._opaca_con_raton()
+            self.assertEqual(alpha(), 0.4)
+            dentro["si"] = True
+            self.app._opaca_con_raton()
+            self.assertEqual(alpha(), 1.0)
+            dentro["si"] = False
+            self.app._opaca_con_raton()
+            self.assertEqual(alpha(), 0.4)
+
+
+@unittest.skipUnless(sys.platform == "win32", "solo Windows")
+class TestAdministrador(unittest.TestCase):
+    def _reabrir(self, argv, admin=0, respuesta=42):
+        from unittest import mock
+        shell = mock.Mock()
+        shell.IsUserAnAdmin.return_value = admin
+        shell.ShellExecuteW.return_value = respuesta
+        with mock.patch.object(ap.ctypes, "windll", SimpleNamespace(shell32=shell)), \
+                mock.patch.object(ap.sys, "argv", argv):
+            return ap._reabrir_como_admin(), shell.ShellExecuteW
+
+    def test_pide_permisos_y_pasa_la_carpeta_de_datos(self):
+        reabierta, ejecutar = self._reabrir(["apuntes.pyw"])
+        self.assertTrue(reabierta)
+        _, verbo, _, args, _, _ = ejecutar.call_args.args
+        self.assertEqual(verbo, "runas")
+        self.assertIn("-m apuntalo", args)
+        self.assertIn("--datos=", args)
+        self.assertTrue(args.endswith("--elevada"))
+
+    def test_no_repite_si_ya_tiene_permisos_o_ya_se_pidieron(self):
+        for argv, admin in ((["apuntes.pyw"], 1), (["apuntes.pyw", "--elevada"], 0)):
+            reabierta, ejecutar = self._reabrir(argv, admin=admin)
+            self.assertFalse(reabierta)
+            ejecutar.assert_not_called()
+
+    def test_si_dicen_que_no_se_abre_sin_permisos(self):
+        reabierta, _ = self._reabrir(["apuntes.pyw"], respuesta=5)    # SE_ERR_ACCESSDENIED
+        self.assertFalse(reabierta)
+
+    def test_carpeta_de_datos_por_argumento(self):
+        from unittest import mock
+        with mock.patch.object(ap.sys, "argv", ["x", r"--datos=C:\Mis apuntes"]):
+            self.assertEqual(ap.carpeta_datos(), Path(r"C:\Mis apuntes"))
+
 
 if __name__ == "__main__":
     unittest.main()

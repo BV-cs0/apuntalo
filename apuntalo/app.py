@@ -11,11 +11,12 @@ import sys
 import time
 import tkinter as tk
 import tkinter.font as tkfont
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import editor, exportar, importar, mapa, ortografia, portapapeles
+from . import accesos, actualizar, editor, exportar, importar, mapa, ortografia, portapapeles
 
 PAQUETE = Path(__file__).resolve().parent
 
@@ -61,6 +62,9 @@ def carpeta_documentos():
 
 def carpeta_datos():
     """Dónde se guardan los apuntes, según cómo se haya instalado la app."""
+    for arg in sys.argv[1:]:
+        if arg.startswith("--datos="):      # la pone _reabrir_como_admin al pedir permisos
+            return Path(arg.split("=", 1)[1])
     if os.environ.get("APUNTALO_DATOS"):
         return Path(os.environ["APUNTALO_DATOS"])
     if getattr(sys, "frozen", False):           # Apuntalo.exe: portátil, junto al .exe
@@ -179,7 +183,7 @@ def elegir_modelo_gemini(modelos):
 
 
 class App(tk.Tk):
-    def __init__(self):
+    def __init__(self, aviso_acceso_creado=False):
         if sys.platform == "win32":
             try:  # coordenadas en píxeles reales (para elegir la zona de captura)
                 ctypes.windll.shcore.SetProcessDpiAwareness(1)
@@ -228,12 +232,28 @@ class App(tk.Tk):
         self.cola_atajo = queue.Queue()
         iniciar_atajo_global(self.cola_atajo)
         self._mirar_atajo()
+        self.cola_actualizacion = queue.Queue()
+        actualizar.comprobar_en_segundo_plano(self.cola_actualizacion.put)
+        self._mirar_actualizacion()
         # Reabrir el último apunte y autoguardar cada 15 s (por si se va la luz o se cierra mal).
         ultima = NOTAS / self.cfg.get("ultima", "-")
         if self.cfg.get("ultima") and ultima.is_file() and ".." not in Path(self.cfg["ultima"]).parts:
             self.cargar(ultima)
             self.refrescar()
         self.after(15000, self._autoguardar)
+        if aviso_acceso_creado:
+            self.estado.configure(text="📌 Se creó un acceso directo en el Escritorio y en el menú Inicio")
+
+    def _mirar_actualizacion(self, intentos=20):
+        """Revisa cada 2 s si el hilo de actualizar.py encontró una versión más nueva (máx. 40 s)."""
+        try:
+            ultima = self.cola_actualizacion.get_nowait()
+        except queue.Empty:
+            if intentos > 0:
+                self.after(2000, lambda: self._mirar_actualizacion(intentos - 1))
+            return
+        self.aviso_actualizacion.configure(text=f"🔔 Versión {ultima} disponible")
+        self.aviso_actualizacion.pack(side="right", padx=(0, 4))
 
     def _autoguardar(self):
         if self.cambiada:
@@ -359,7 +379,24 @@ class App(tk.Tk):
             pass
 
     def aplicar_opacidad(self, *_):
-        self.attributes("-alpha", max(0.3, min(1.0, float(self.opacidad.get()))))
+        self._alpha = max(0.3, min(1.0, float(self.opacidad.get())))
+        self.attributes("-alpha", self._alpha)
+        # Al mover la barra el ratón está encima: se ve la opacidad elegida hasta que salga y vuelva.
+        self._raton_encima = self._raton_dentro()
+
+    def _raton_dentro(self):
+        x, y = self.winfo_pointerxy()
+        x0, y0 = self.winfo_rootx(), self.winfo_rooty()
+        return x0 <= x < x0 + self.winfo_width() and y0 <= y < y0 + self.winfo_height()
+
+    def _opaca_con_raton(self):
+        """Semitransparente sobre el vídeo, pero entera mientras el ratón está encima."""
+        if self._alpha >= 1.0 or not self.winfo_viewable():
+            return
+        dentro = self._raton_dentro()
+        if dentro != self._raton_encima:
+            self._raton_encima = dentro
+            self.attributes("-alpha", 1.0 if dentro else self._alpha)
 
     @staticmethod
     def _geo_compacta_valida(geo):
@@ -429,6 +466,7 @@ class App(tk.Tk):
                 self._resumen_listo(*self.cola_ia.get_nowait())
         except queue.Empty:
             pass
+        self._opaca_con_raton()
         self.after(150, self._mirar_atajo)
 
     # ---------- interfaz ----------
@@ -489,6 +527,10 @@ class App(tk.Tk):
         ttk.Button(clase, text="✓ Ortografía", command=self.dialogo_ortografia).pack(side="left")
         self.btn_tema = ttk.Button(barra, text="☾ Oscuro", command=self.alternar_tema)
         self.btn_tema.pack(side="right", padx=(0, 4))
+        # Oculto hasta que actualizar.py avise de una versión nueva (ver _mirar_actualizacion).
+        self.aviso_actualizacion = ttk.Label(barra, text="", foreground="#B45309", cursor="hand2")
+        self.aviso_actualizacion.bind(
+            "<Button-1>", lambda e: webbrowser.open("https://github.com/BV-cs0/apuntalo/releases/latest"))
 
         panel = self.panel = ttk.PanedWindow(self, orient="horizontal")
         panel.pack(fill="both", expand=True)
@@ -2356,9 +2398,57 @@ class App(tk.Tk):
         self.destroy()
 
 
+def _crear_accesos_si_hace_falta() -> bool:
+    """La primera vez que se abre Apuntalo.exe, crea su acceso directo en el Escritorio y en el
+    menú Inicio (apuntando a donde esté el .exe, sin moverlo). No hace nada en las demás formas
+    de instalar la app, ni si ya se intentó antes (haya funcionado o no)."""
+    if not getattr(sys, "frozen", False):
+        return False
+    cfg = cargar_config()
+    if cfg.get("acceso_directo_creado"):
+        return False
+    destinos = [carpeta_windows(0x10, "Desktop"), carpeta_windows(0x02, "Start Menu\\Programs")]
+    creado = accesos.crear_accesos_directos(destinos, Path(sys.executable).resolve())
+    cfg["acceso_directo_creado"] = True   # no se reintenta en cada arranque aunque haya fallado
+    guardar_config(cfg)
+    return creado
+
+
+def _reabrir_como_admin() -> bool:
+    """Vuelve a abrir la app pidiendo permisos de administrador (el aviso de Windows).
+    True si la copia con permisos se abrió y esta debe cerrarse; si dicen que no, sigue sin ellos."""
+    if sys.platform != "win32" or "--elevada" in sys.argv:
+        return False
+    try:
+        shell = ctypes.windll.shell32
+        if shell.IsUserAnAdmin():
+            return False
+        if getattr(sys, "frozen", False):
+            programa, args = sys.executable, sys.argv[1:]
+        else:
+            ventana = Path(sys.executable).with_name("pythonw.exe")
+            programa = str(ventana if ventana.is_file() else sys.executable)
+            # El proceso con permisos no hereda las variables de entorno: la carpeta de datos va en la orden.
+            args = ["-m", "apuntalo", f"--datos={BASE}", *sys.argv[1:]]
+        shell.ShellExecuteW.restype = ctypes.c_void_p
+        r = shell.ShellExecuteW(None, "runas", programa, subprocess.list2cmdline([*args, "--elevada"]),
+                                str(PAQUETE.parent), 1)
+        return (r or 0) > 32
+    except Exception:
+        return False
+
+
 def main():
     """Punto de entrada: `apuntalo` (pip), `python -m apuntalo`, apuntes.pyw y Apuntalo.exe."""
-    App().mainloop()
+    if _reabrir_como_admin():
+        return
+    if sys.platform == "win32":
+        try:    # sin esto, abierta con Python, la barra de tareas la agrupa con pythonw y le pone su icono
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("BV-cs0.Apuntalo")
+        except Exception:
+            pass
+    aviso_acceso = _crear_accesos_si_hace_falta()
+    App(aviso_acceso_creado=aviso_acceso).mainloop()
 
 
 if __name__ == "__main__":
