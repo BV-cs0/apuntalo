@@ -36,6 +36,19 @@ class TestAccesosDirectos(unittest.TestCase):
         self.assertEqual(run_mock.call_count, 2)
         self.assertTrue(resultado)
 
+    def test_quita_solo_los_accesos_que_apuntan_al_exe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            nuestro, ajeno, vacio = Path(tmp) / "a", Path(tmp) / "b", Path(tmp) / "c"
+            for carpeta in (nuestro, ajeno, vacio):
+                carpeta.mkdir()
+            exe = Path(r"C:\Users\Prueba\Desktop\Apuntalo.exe")
+            (nuestro / accesos.NOMBRE).write_bytes(b"\x4c\x00cabecera" + str(exe).upper().encode("utf-16-le"))
+            (ajeno / accesos.NOMBRE).write_bytes(b"\x4c\x00" + r"C:\Otra\Apuntalo.exe".encode("utf-16-le"))
+            quitados = accesos.quitar_accesos_rotos([nuestro, ajeno, vacio], exe)
+            self.assertEqual(quitados, 1)
+            self.assertFalse((nuestro / accesos.NOMBRE).exists())
+            self.assertTrue((ajeno / accesos.NOMBRE).exists())
+
     @patch("apuntalo.accesos.subprocess.run", side_effect=OSError("powershell no disponible"))
     def test_si_powershell_no_esta_disponible_no_lanza_excepcion(self, run_mock):
         with patch.object(accesos.sys, "platform", "win32"):

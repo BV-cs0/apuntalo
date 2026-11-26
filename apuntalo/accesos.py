@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 PAQUETE = Path(__file__).resolve().parent
+NOMBRE = "Apúntalo.lnk"
 
 
 def _crear_uno(destino: Path, objetivo: Path) -> bool:
@@ -33,5 +34,23 @@ def crear_accesos_directos(destinos: list[Path], objetivo: Path) -> bool:
     debe poder reintentar en el próximo arranque los destinos que fallaron."""
     if sys.platform != "win32":
         return False
-    resultados = [_crear_uno(destino / "Apúntalo.lnk", objetivo) for destino in destinos]
+    resultados = [_crear_uno(destino / NOMBRE, objetivo) for destino in destinos]
     return all(resultados)
+
+
+def quitar_accesos_rotos(destinos: list[Path], objetivo: Path) -> int:
+    """Con el Control inteligente de aplicaciones activo, Windows no deja abrir los accesos
+    directos al .exe: quita los que creó Apúntalo (los que apuntan a `objetivo`) para que no
+    quede en el Escritorio un icono que no abre. Nunca toca otros accesos. Devuelve cuántos quitó."""
+    # El acceso guarda la ruta del .exe en UTF-16 (icono y destino); así se reconoce sin abrir PowerShell.
+    huella = str(objetivo).encode("utf-16-le").lower()
+    quitados = 0
+    for destino in destinos:
+        acceso = destino / NOMBRE
+        try:
+            if acceso.is_file() and huella in acceso.read_bytes().lower():
+                acceso.unlink()
+                quitados += 1
+        except OSError:
+            pass
+    return quitados

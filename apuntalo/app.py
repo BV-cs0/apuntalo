@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import accesos, actualizar, editor, exportar, importar, mapa, ortografia, portapapeles
+from . import __version__, accesos, actualizar, control_apps, editor, exportar, importar, mapa, ortografia, portapapeles
 
 PAQUETE = Path(__file__).resolve().parent
 
@@ -190,7 +190,7 @@ class App(tk.Tk):
             except Exception:
                 pass
         super().__init__()
-        self.title("Apúntalo")
+        self.title(f"Apúntalo {__version__}")
         NOTAS.mkdir(parents=True, exist_ok=True)
         try:
             self.iconbitmap(default=str(PAQUETE / "apuntalo.ico"))
@@ -2405,11 +2405,16 @@ def _crear_accesos_si_hace_falta() -> bool:
     script la primera vez), no lo marca como hecho: lo reintenta en el próximo arranque."""
     if not getattr(sys, "frozen", False):
         return False
+    destinos = [carpeta_windows(0x10, "Desktop"), carpeta_windows(0x02, "Start Menu\\Programs")]
+    exe = Path(sys.executable).resolve()
+    if control_apps.bloquea_accesos(exe):
+        # Windows no dejaría abrirlos: quita los que creó una versión anterior y no crea más.
+        accesos.quitar_accesos_rotos(destinos, exe)
+        return False
     cfg = cargar_config()
     if cfg.get("acceso_directo_creado"):
         return False
-    destinos = [carpeta_windows(0x10, "Desktop"), carpeta_windows(0x02, "Start Menu\\Programs")]
-    creado = accesos.crear_accesos_directos(destinos, Path(sys.executable).resolve())
+    creado = accesos.crear_accesos_directos(destinos, exe)
     if creado:
         cfg["acceso_directo_creado"] = True
         guardar_config(cfg)
@@ -2443,8 +2448,12 @@ def _reabrir_como_admin() -> bool:
 
 def main():
     """Punto de entrada: `apuntalo` (pip), `python -m apuntalo`, apuntes.pyw y Apuntalo.exe."""
+    if actualizar.ARGUMENTO_PRUEBA in sys.argv:
+        return   # la versión anterior comprueba que este .exe arranca antes de instalarlo
     if _reabrir_como_admin():
         return
+    if getattr(sys, "frozen", False):
+        actualizar.limpiar_restos(Path(sys.executable).resolve())
     if sys.platform == "win32":
         try:    # sin esto, abierta con Python, la barra de tareas la agrupa con pythonw y le pone su icono
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("BV-cs0.Apuntalo")
@@ -2452,6 +2461,7 @@ def main():
             pass
     aviso_acceso = _crear_accesos_si_hace_falta()
     App(aviso_acceso_creado=aviso_acceso).mainloop()
+    actualizar.aplicar_al_cerrar()   # si se descargó y verificó una versión nueva, se usa al volver a abrir
 
 
 if __name__ == "__main__":
