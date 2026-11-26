@@ -527,10 +527,6 @@ class App(tk.Tk):
         ttk.Button(clase, text="✓ Ortografía", command=self.dialogo_ortografia).pack(side="left")
         self.btn_tema = ttk.Button(barra, text="☾ Oscuro", command=self.alternar_tema)
         self.btn_tema.pack(side="right", padx=(0, 4))
-        # Oculto hasta que actualizar.py avise de una versión nueva (ver _mirar_actualizacion).
-        self.aviso_actualizacion = ttk.Label(barra, text="", foreground="#B45309", cursor="hand2")
-        self.aviso_actualizacion.bind(
-            "<Button-1>", lambda e: webbrowser.open("https://github.com/BV-cs0/apuntalo/releases/latest"))
 
         panel = self.panel = ttk.PanedWindow(self, orient="horizontal")
         panel.pack(fill="both", expand=True)
@@ -602,8 +598,14 @@ class App(tk.Tk):
         t.bind("<Control-b>", lambda e: self._envolver("**"))
         t.bind("<Control-k>", lambda e: self._envolver("*"))
         t.bind("<Control-Shift-X>", lambda e: self._envolver("~~"))
-        self.estado = ttk.Label(der, text="", foreground="gray")
-        self.estado.pack(side="bottom", anchor="w", before=marco)  # siempre visible abajo
+        fila_estado = ttk.Frame(der)
+        fila_estado.pack(side="bottom", fill="x", before=marco)  # siempre visible, también en compacto
+        self.estado = ttk.Label(fila_estado, text="", foreground="gray")
+        self.estado.pack(side="left", anchor="w")
+        # Oculto hasta que actualizar.py avise de una versión nueva (ver _mirar_actualizacion).
+        self.aviso_actualizacion = ttk.Label(fila_estado, text="", foreground="#B45309", cursor="hand2")
+        self.aviso_actualizacion.bind(
+            "<Button-1>", lambda e: webbrowser.open("https://github.com/BV-cs0/apuntalo/releases/latest"))
         panel.add(der, weight=3)
 
         self.bind_all("<Control-s>", lambda e: self.guardar())
