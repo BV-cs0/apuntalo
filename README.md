@@ -135,8 +135,8 @@ Tus apuntes se quedan en tu PC. Solo salen de él si usas **Resumir con IA**: co
 | `apuntalo/accesos.py` | Crea los accesos directos del `.exe` y quita los que Windows no dejaría abrir. |
 | `apuntalo/control_apps.py` | Detecta el Control inteligente de aplicaciones de Windows 11 y la marca de «descargado de Internet». |
 | `apuntalo/captura.ps1` | Ayudante de PowerShell para el modo automático: lee los Subtítulos en directo y hace capturas con OCR. |
+| `apuntalo/crear_acceso.ps1` | Crea un acceso directo del `.exe` (lo usa `accesos.py`). |
 | `apuntes.pyw` | Lanzador para abrir la app desde el código con doble clic. |
-| `crear_exe.bat` | Genera `Apuntalo.exe` con PyInstaller. |
 | `pyproject.toml` | Configuración del paquete de PyPI (`pip install apuntalo`). |
 
 ## Contribuir
@@ -150,13 +150,11 @@ Tus apuntes se quedan en tu PC. Solo salen de él si usas **Resumir con IA**: co
 
 Antes de enviar cambios, pasa las pruebas desde la carpeta del proyecto: `py -3 -m unittest -v`.
 
-Para generar el `.exe`: `py -3 -m pip install -r requirements.txt` y después ejecuta `crear_exe.bat`.
-
 ### Publicar una versión nueva (mantenedores)
 
 1. Sube el número en `apuntalo/__init__.py` (`__version__`).
 2. Crea una *Release* en GitHub con la etiqueta `vX.Y.Z` y escribe en ella qué cambia.
-3. Al publicar la *Release*, GitHub Actions compila y adjunta `Apuntalo.exe` y sube la versión a PyPI solo (`.github/workflows/publicar.yml`). Usa *Trusted Publishing*, sin contraseñas ni tokens. También se puede lanzar a mano: *Actions* → **Publicar en PyPI** → *Run workflow*. PyPI no deja volver a subir un número de versión que ya existe: si ya está, el workflow se la salta.
+3. Al publicar la *Release*, GitHub Actions genera `Apuntalo.exe` con PyInstaller, lo adjunta junto con la versión a PyPI (`.github/workflows/publicar.yml`). Usa *Trusted Publishing*, sin contraseñas ni tokens. También se puede lanzar a mano: *Actions* → **Publicar en PyPI y en la Release** → *Run workflow* (eso solo reconstruye para comprobar que compila, sin publicar nada). PyPI no deja volver a subir un número de versión que ya existe: si ya está, el workflow se la salta.
 
 ## Licencia
 

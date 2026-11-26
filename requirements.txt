@@ -1,7 +1,6 @@
 # La app funciona solo con la biblioteca estándar de Python 3.10+.
 # Opcional: resumen con Claude
 anthropic
-# Opcional: generar Apuntalo.exe y el paquete de PyPI
-pyinstaller
+# Opcional: comprobar el paquete de PyPI a mano (GitHub Actions ya lo hace solo al publicar)
 build
 twine
