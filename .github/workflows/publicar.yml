@@ -61,18 +61,9 @@ jobs:
       - name: Compilar Apuntalo.exe
         run: |
           py -3 -m PyInstaller --noconfirm --onefile --windowed --name Apuntalo --icon apuntalo\apuntalo.ico --add-data "apuntalo\captura.ps1;apuntalo" --add-data "apuntalo\crear_acceso.ps1;apuntalo" --add-data "apuntalo\apuntalo.ico;apuntalo" --collect-data spellchecker apuntes.pyw
-      # El .sha256 es lo que comprueba la autoactualización del .exe antes de instalar nada.
-      - name: Calcular el SHA-256 de Apuntalo.exe
-        shell: pwsh
-        run: |
-          $hash = (Get-FileHash dist/Apuntalo.exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          [IO.File]::WriteAllText("dist/Apuntalo.exe.sha256", "$hash  Apuntalo.exe`n")
-          Write-Host "SHA-256: $hash"
       # Solo hay una Release donde subir el .exe cuando el workflow se lanzó al publicarla.
-      - name: Subir Apuntalo.exe y su SHA-256 a la Release
+      - name: Subir Apuntalo.exe a la Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/Apuntalo.exe
-            dist/Apuntalo.exe.sha256
+          files: dist/Apuntalo.exe

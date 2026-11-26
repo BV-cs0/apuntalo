@@ -45,9 +45,9 @@ Hay dos formas. Elige la que te resulte más cómoda.
 
 La primera vez que lo abres, Apúntalo deja un acceso directo en el Escritorio y en el menú Inicio (apuntando a ese `.exe`, sin moverlo ni copiarlo), para que luego no tengas que volver a buscar la carpeta.
 
-**Se actualiza solo.** Mientras lo usas, descarga en segundo plano la última versión de [Releases](https://github.com/BV-cs0/apuntalo/releases), comprueba que su SHA-256 coincide con el publicado y, al cerrarlo, cambia el `.exe`: la próxima vez que lo abras ya es la versión nueva. Sin internet o si algo falla, sigue funcionando igual. La versión que tienes aparece en el título de la ventana y lo que cambia en cada una está en Releases.
+Cada vez que haya una versión nueva, te avisa con un pequeño aviso 🔔 arriba a la derecha de la ventana: haz clic para ir a la página de descargas. La versión que tienes aparece en el título de la ventana y lo que cambia en cada una está en [Releases](https://github.com/BV-cs0/apuntalo/releases).
 
-**Si tienes activado el Control inteligente de aplicaciones** de Windows 11, Apúntalo no se sustituye solo: te avisa con un 🔔 arriba a la derecha y, al hacer clic, abre la página de descargas. Tampoco crea accesos directos a un `.exe` recién descargado, porque Windows no dejaría abrirlos (y quita los que hubiera creado una versión anterior): ábrelo directamente desde el `.exe`.
+**Si tienes activado el Control inteligente de aplicaciones** de Windows 11, Apúntalo no crea accesos directos a un `.exe` recién descargado, porque Windows no dejaría abrirlos (y quita los que hubiera creado una versión anterior): ábrelo directamente desde el `.exe`.
 
 Al abrirlo puede pasar esto:
 - Windows avisa con «Windows protegió su PC» porque el programa no está firmado: pulsa *Más información* → *Ejecutar de todas formas*.
@@ -131,7 +131,7 @@ Tus apuntes se quedan en tu PC. Solo salen de él si usas **Resumir con IA**: co
 | `apuntalo/exportar.py` | Exportar a PDF (imprimiendo HTML con Microsoft Edge), DOCX y ODT (generados a mano), HTML, Markdown y texto. |
 | `apuntalo/importar.py` | Importar DOCX, ODT, HTML, Markdown y texto, convirtiéndolos a Markdown. |
 | `apuntalo/portapapeles.py` | Leer imágenes y archivos copiados (Ctrl+V) sin librerías externas. |
-| `apuntalo/actualizar.py` | Actualizaciones en segundo plano: el `.exe` se sustituye solo (con SHA-256 comprobado) y las demás instalaciones avisan. |
+| `apuntalo/actualizar.py` | Comprueba en segundo plano si hay una versión nueva y la avisa con el 🔔. |
 | `apuntalo/accesos.py` | Crea los accesos directos del `.exe` y quita los que Windows no dejaría abrir. |
 | `apuntalo/control_apps.py` | Detecta el Control inteligente de aplicaciones de Windows 11 y la marca de «descargado de Internet». |
 | `apuntalo/captura.ps1` | Ayudante de PowerShell para el modo automático: lee los Subtítulos en directo y hace capturas con OCR. |
@@ -156,7 +156,7 @@ Para generar el `.exe`: `py -3 -m pip install -r requirements.txt` y después ej
 
 1. Sube el número en `apuntalo/__init__.py` (`__version__`).
 2. Crea una *Release* en GitHub con la etiqueta `vX.Y.Z` y escribe en ella qué cambia.
-3. Al publicar la *Release*, GitHub Actions compila `Apuntalo.exe`, lo sube con su `Apuntalo.exe.sha256` (sin ese archivo los `.exe` ya instalados no se actualizan) y sube la versión a PyPI solo (`.github/workflows/publicar.yml`). Usa *Trusted Publishing*, sin contraseñas ni tokens. También se puede lanzar a mano: *Actions* → **Publicar en PyPI** → *Run workflow*. PyPI no deja volver a subir un número de versión que ya existe: si ya está, el workflow se la salta.
+3. Al publicar la *Release*, GitHub Actions compila y adjunta `Apuntalo.exe` y sube la versión a PyPI solo (`.github/workflows/publicar.yml`). Usa *Trusted Publishing*, sin contraseñas ni tokens. También se puede lanzar a mano: *Actions* → **Publicar en PyPI** → *Run workflow*. PyPI no deja volver a subir un número de versión que ya existe: si ya está, el workflow se la salta.
 
 ## Licencia
 

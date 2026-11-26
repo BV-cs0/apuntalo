@@ -2448,12 +2448,8 @@ def _reabrir_como_admin() -> bool:
 
 def main():
     """Punto de entrada: `apuntalo` (pip), `python -m apuntalo`, apuntes.pyw y Apuntalo.exe."""
-    if actualizar.ARGUMENTO_PRUEBA in sys.argv:
-        return   # la versión anterior comprueba que este .exe arranca antes de instalarlo
     if _reabrir_como_admin():
         return
-    if getattr(sys, "frozen", False):
-        actualizar.limpiar_restos(Path(sys.executable).resolve())
     if sys.platform == "win32":
         try:    # sin esto, abierta con Python, la barra de tareas la agrupa con pythonw y le pone su icono
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("BV-cs0.Apuntalo")
@@ -2461,7 +2457,6 @@ def main():
             pass
     aviso_acceso = _crear_accesos_si_hace_falta()
     App(aviso_acceso_creado=aviso_acceso).mainloop()
-    actualizar.aplicar_al_cerrar()   # si se descargó y verificó una versión nueva, se usa al volver a abrir
 
 
 if __name__ == "__main__":

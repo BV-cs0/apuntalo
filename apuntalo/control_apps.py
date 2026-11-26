@@ -2,8 +2,7 @@
 
 Con ese control activo, Windows no deja abrir un acceso directo a un .exe que lleva la marca
 de «descargado de Internet» (como Apuntalo.exe recién bajado de GitHub, que no está firmado),
-aunque el .exe en sí sí se abra. Tampoco conviene que el programa se sustituya solo. Por eso,
-con el control activo, Apúntalo no crea esos accesos ni se autoactualiza: solo avisa."""
+aunque el .exe en sí sí se abra. Por eso, en ese caso, Apúntalo no crea esos accesos."""
 import sys
 from pathlib import Path
 
