@@ -47,12 +47,10 @@ La primera vez que lo abres, Apúntalo deja un acceso directo en el Escritorio y
 
 Cada vez que haya una versión nueva, te avisa con un pequeño aviso 🔔 arriba a la derecha de la ventana: haz clic para ir a la página de descargas. La versión que tienes aparece en el título de la ventana y lo que cambia en cada una está en [Releases](https://github.com/BV-cs0/apuntalo/releases).
 
-**Si tienes activado el Control inteligente de aplicaciones** de Windows 11, Apúntalo no crea accesos directos a un `.exe` recién descargado, porque Windows no dejaría abrirlos (y quita los que hubiera creado una versión anterior): ábrelo directamente desde el `.exe`.
-
 Al abrirlo puede pasar esto:
 - Windows avisa con «Windows protegió su PC» porque el programa no está firmado: pulsa *Más información* → *Ejecutar de todas formas*.
-- Si tienes activado el **Control inteligente de aplicaciones** de Windows 11, puede que el `.exe` quede bloqueado. En ese caso usa la opción 2.
-- Si al abrir el acceso directo «Apúntalo» Windows dice que bloqueó una «extensión de archivo peligrosa de web», abre `Apuntalo.exe` directamente. Las versiones nuevas ya no crean ese acceso.
+- Con el **Control inteligente de aplicaciones** de Windows 11 activado, Apúntalo no crea los accesos directos, porque Windows no dejaría abrirlos, y quita los que hubiera creado una versión anterior. Abre siempre `Apuntalo.exe` directamente. Si Windows bloquea también el `.exe`, usa la opción 2.
+- Si al abrir el acceso directo «Apúntalo» Windows dice que bloqueó una «extensión de archivo peligrosa de web», es un acceso de una versión anterior: abre `Apuntalo.exe` directamente.
 
 ### Opción 2: instalar con Python (`pip`)
 
@@ -154,7 +152,7 @@ Antes de enviar cambios, pasa las pruebas desde la carpeta del proyecto: `py -3 
 
 1. Sube el número en `apuntalo/__init__.py` (`__version__`).
 2. Crea una *Release* en GitHub con la etiqueta `vX.Y.Z` y escribe en ella qué cambia.
-3. Al publicar la *Release*, GitHub Actions genera `Apuntalo.exe` con PyInstaller, lo adjunta junto con la versión a PyPI (`.github/workflows/publicar.yml`). Usa *Trusted Publishing*, sin contraseñas ni tokens. También se puede lanzar a mano: *Actions* → **Publicar en PyPI y en la Release** → *Run workflow* (eso solo reconstruye para comprobar que compila, sin publicar nada). PyPI no deja volver a subir un número de versión que ya existe: si ya está, el workflow se la salta.
+3. Al publicar la *Release*, GitHub Actions (`.github/workflows/publicar.yml`) genera `Apuntalo.exe` con PyInstaller, lo adjunta a la *Release* y sube la versión a PyPI. Usa *Trusted Publishing*, sin contraseñas ni tokens. También se puede lanzar a mano: *Actions* → **Publicar en PyPI y en la Release** → *Run workflow* (eso solo reconstruye para comprobar que compila, sin publicar nada). PyPI no deja volver a subir un número de versión que ya existe: si ya está, el workflow se la salta.
 
 ## Licencia
 
