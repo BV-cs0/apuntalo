@@ -78,16 +78,16 @@ class TestVentanaOrtografia(unittest.TestCase):
         (Path(d) / "notas").mkdir()
         (Path(d) / "notas" / "P.md").write_text("---\ntitulo: P\netiquetas: \ncreado: x\n---\n"
                                                 "poodemos ver el exploit\n", encoding="utf-8")
-        from apuntalo import app as ap
-        antes = (ap.BASE, ap.NOTAS, ap.ADJUNTOS, ap.CONFIG)
-        ap.BASE, ap.NOTAS = Path(d), Path(d) / "notas"
-        ap.ADJUNTOS, ap.CONFIG = ap.NOTAS / "_adjuntos", Path(d) / "config.json"
+        from apuntalo import app as ap, datos
+        antes = (datos.BASE, datos.NOTAS, datos.ADJUNTOS, datos.CONFIG)
+        datos.BASE, datos.NOTAS = Path(d), Path(d) / "notas"
+        datos.ADJUNTOS, datos.CONFIG = datos.NOTAS / "_adjuntos", Path(d) / "config.json"
         self.addCleanup(lambda: setattr(ap, "BASE", antes[0]) or setattr(ap, "NOTAS", antes[1])
                         or setattr(ap, "ADJUNTOS", antes[2]) or setattr(ap, "CONFIG", antes[3]))
         a = ap.App()
         try:
             a.update()
-            a.cargar(ap.NOTAS / "P.md")
+            a.cargar(datos.NOTAS / "P.md")
             a._corr = Falso()
             a._corr.sugerencias = lambda p, maximo=6: ["podemos"]
             a._corr.ignorar = lambda p: None
@@ -107,16 +107,16 @@ class TestVentanaOrtografia(unittest.TestCase):
         (Path(d) / "notas").mkdir()
         (Path(d) / "notas" / "P.md").write_text("---\ntitulo: P\netiquetas: \ncreado: x\n---\n"
                                                 "Podemos ver aqui", encoding="utf-8")
-        from apuntalo import app as ap
-        antes = (ap.BASE, ap.NOTAS, ap.ADJUNTOS, ap.CONFIG)
-        ap.BASE, ap.NOTAS = Path(d), Path(d) / "notas"
-        ap.ADJUNTOS, ap.CONFIG = ap.NOTAS / "_adjuntos", Path(d) / "config.json"
+        from apuntalo import app as ap, datos
+        antes = (datos.BASE, datos.NOTAS, datos.ADJUNTOS, datos.CONFIG)
+        datos.BASE, datos.NOTAS = Path(d), Path(d) / "notas"
+        datos.ADJUNTOS, datos.CONFIG = datos.NOTAS / "_adjuntos", Path(d) / "config.json"
         self.addCleanup(lambda: setattr(ap, "BASE", antes[0]) or setattr(ap, "NOTAS", antes[1])
                         or setattr(ap, "ADJUNTOS", antes[2]) or setattr(ap, "CONFIG", antes[3]))
         a = ap.App()
         try:
             a.update()
-            a.cargar(ap.NOTAS / "P.md")
+            a.cargar(datos.NOTAS / "P.md")
             a._corr = Falso()
             a.texto.mark_set("insert", "1.end")
             a.texto.focus_force()

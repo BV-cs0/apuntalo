@@ -123,7 +123,15 @@ Tus apuntes se quedan en tu PC. Solo salen de él si usas **Resumir con IA**: co
 
 | Archivo | Qué hace |
 |---|---|
-| `apuntalo/app.py` | La aplicación (Python + tkinter, solo con la biblioteca estándar). |
+| `apuntalo/app.py` | La ventana principal (Python + tkinter, solo con la biblioteca estándar): la construye, gestiona los apuntes y las carpetas, y arranca la app. |
+| `apuntalo/ventana.py` | Fijar encima, esconder la barra de tareas, opacidad, modo compacto y el atajo Ctrl+Alt+A. |
+| `apuntalo/escritura.py` | El editor en la ventana: letra, tema, resaltado, corrector y teclas que dan formato al escribir. |
+| `apuntalo/adjuntos.py` | Adjuntar archivos, pegar con Ctrl+V y mostrar las imágenes dentro del texto. |
+| `apuntalo/automatico.py` | Apuntes automáticos: Subtítulos en directo y capturas con OCR. |
+| `apuntalo/ia.py` | Resumir con IA (ChatGPT, Gemini y Claude). |
+| `apuntalo/exportacion.py` | Las ventanas de exportar, importar y el mapa mental. |
+| `apuntalo/datos.py` | Dónde se guardan los apuntes y la configuración, y cómo se leen y escriben. |
+| `apuntalo/estilo.py` | Letras y colores del tema claro y del oscuro. |
 | `apuntalo/editor.py` | Lógica del editor sin ventanas: listas que se numeran solas, Tab y Retroceso en listas, borrar palabras, flechas y bloques. |
 | `apuntalo/ortografia.py` | Corrector en español e inglés con el diccionario de Windows (por COM, con `ctypes`) y `pyspellchecker` de respaldo. |
 | `apuntalo/exportar.py` | Exportar a PDF (imprimiendo HTML con Microsoft Edge), DOCX y ODT (generados a mano), HTML, Markdown y texto. |

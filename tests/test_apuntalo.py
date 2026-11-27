@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 RAIZ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(RAIZ))
-from apuntalo import app as ap, editor, exportar, mapa  # noqa: E402
+from apuntalo import app as ap, automatico, datos, editor, exportar, ia, mapa  # noqa: E402
 
 
 class TemporalMixin:
@@ -19,34 +19,34 @@ class TemporalMixin:
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         base = Path(self._tmp.name)
-        self._antes = (ap.BASE, ap.NOTAS, ap.ADJUNTOS, ap.CONFIG)
-        ap.BASE, ap.NOTAS = base, base / "notas"
-        ap.ADJUNTOS, ap.CONFIG = ap.NOTAS / "_adjuntos", base / "config.json"
+        self._antes = (datos.BASE, datos.NOTAS, datos.ADJUNTOS, datos.CONFIG)
+        datos.BASE, datos.NOTAS = base, base / "notas"
+        datos.ADJUNTOS, datos.CONFIG = datos.NOTAS / "_adjuntos", base / "config.json"
 
     def tearDown(self):
-        ap.BASE, ap.NOTAS, ap.ADJUNTOS, ap.CONFIG = self._antes
+        datos.BASE, datos.NOTAS, datos.ADJUNTOS, datos.CONFIG = self._antes
         self._tmp.cleanup()
 
 
 class TestNotas(TemporalMixin, unittest.TestCase):
     def test_slug_quita_caracteres_prohibidos(self):
-        self.assertEqual(ap.slug('Tema 1: ¿qué es "x"?'), "Tema 1 ¿qué es x")
-        self.assertEqual(ap.slug("  ..  "), "sin titulo")
+        self.assertEqual(datos.slug('Tema 1: ¿qué es "x"?'), "Tema 1 ¿qué es x")
+        self.assertEqual(datos.slug("  ..  "), "sin titulo")
 
     def test_guardar_y_leer(self):
-        ruta = ap.NOTAS / "Física" / "Clase 1.md"
-        ap.escribir_nota(ruta, "Clase 1", ["examen", "tema 2"], "2026-11-09 10:00", "Texto con **negrita**\n")
-        meta, cuerpo = ap.leer_nota(ruta)
+        ruta = datos.NOTAS / "Física" / "Clase 1.md"
+        datos.escribir_nota(ruta, "Clase 1", ["examen", "tema 2"], "2026-11-09 10:00", "Texto con **negrita**\n")
+        meta, cuerpo = datos.leer_nota(ruta)
         self.assertEqual(meta["titulo"], "Clase 1")
         self.assertEqual(meta["etiquetas"], ["examen", "tema 2"])
         self.assertEqual(meta["creado"], "2026-11-09 10:00")
         self.assertEqual(cuerpo, "Texto con **negrita**\n")
 
     def test_leer_markdown_sin_cabecera(self):
-        ruta = ap.NOTAS / "suelta.md"
+        ruta = datos.NOTAS / "suelta.md"
         ruta.parent.mkdir(parents=True)
         ruta.write_text("# Hola\n", encoding="utf-8")
-        meta, cuerpo = ap.leer_nota(ruta)
+        meta, cuerpo = datos.leer_nota(ruta)
         self.assertEqual(meta["titulo"], "suelta")
         self.assertEqual(cuerpo, "# Hola\n")
 
@@ -91,33 +91,33 @@ class TestCarpetaDatos(unittest.TestCase):
     def test_variable_de_entorno_manda(self):
         from unittest import mock
         with mock.patch.dict("os.environ", {"APUNTALO_DATOS": "X:/mis apuntes"}):
-            self.assertEqual(ap.carpeta_datos(), Path("X:/mis apuntes"))
+            self.assertEqual(datos.carpeta_datos(), Path("X:/mis apuntes"))
 
     def test_instalado_con_pip_usa_documentos(self):
         from unittest import mock
         falso = Path("C:/Python/Lib/site-packages/apuntalo")
-        with mock.patch.object(ap, "PAQUETE", falso), mock.patch.dict("os.environ", {}, clear=True):
-            self.assertEqual(ap.carpeta_datos(), ap.carpeta_documentos() / "Apuntalo")
+        with mock.patch.object(datos, "PAQUETE", falso), mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(datos.carpeta_datos(), datos.carpeta_documentos() / "Apuntalo")
 
     def test_desde_el_codigo_usa_la_carpeta_del_proyecto(self):
         from unittest import mock
         with mock.patch.dict("os.environ", {}, clear=True):
-            self.assertEqual(ap.carpeta_datos(), RAIZ)
+            self.assertEqual(datos.carpeta_datos(), RAIZ)
 
 
 class TestUtilidades(unittest.TestCase):
     def test_texto_util_descarta_basura_del_ocr(self):
         ocr = "e\noo\n> x\nConceptos clave: (Cloud)\n0100\n1- Recursos (infraestructura)"
-        self.assertEqual(ap.texto_util(ocr), "Conceptos clave: (Cloud)\n1- Recursos (infraestructura)")
+        self.assertEqual(automatico.texto_util(ocr), "Conceptos clave: (Cloud)\n1- Recursos (infraestructura)")
 
     def test_elegir_modelo_gemini(self):
         def m(nombre, ok=True):
             return {"name": "models/" + nombre, "supportedGenerationMethods": ["generateContent"] if ok else []}
         modelos = [m("gemini-2.0-flash"), m("gemini-2.5-flash"), m("gemini-2.5-flash-lite"),
                    m("gemini-3.0-flash-preview"), m("gemini-2.5-pro"), m("gemini-9-flash", ok=False)]
-        self.assertEqual(ap.elegir_modelo_gemini(modelos), "models/gemini-2.5-flash")
+        self.assertEqual(ia.elegir_modelo_gemini(modelos), "models/gemini-2.5-flash")
         with self.assertRaises(RuntimeError):
-            ap.elegir_modelo_gemini([m("gemini-2.5-pro")])
+            ia.elegir_modelo_gemini([m("gemini-2.5-pro")])
 
 
 class TestExportar(unittest.TestCase):
@@ -443,7 +443,7 @@ class TestVentana(TemporalMixin, unittest.TestCase):
     def test_descarta_geo_normal_diminuta_al_arrancar(self):
         for compacto in (False, True):
             with self.subTest(compacto=compacto):
-                ap.guardar_config({"geo_normal": "1x1+-16+18", "compacto": compacto})
+                datos.guardar_config({"geo_normal": "1x1+-16+18", "compacto": compacto})
                 app = self._otra_app()
                 try:
                     self.assertEqual(app.geo_normal, "1250x720")
@@ -470,7 +470,7 @@ class TestVentana(TemporalMixin, unittest.TestCase):
             self.app.nueva()
         self.app.texto.insert("end", "# Título\nLa **derivada** [00:01:12]\n")
         self.app.guardar()
-        self.assertTrue((ap.NOTAS / "Tema 1" / "Derivadas.md").is_file())
+        self.assertTrue((datos.NOTAS / "Tema 1" / "Derivadas.md").is_file())
         self.app.resaltar()
         self.assertTrue(self.app.texto.tag_ranges("h1"))
         self.assertTrue(self.app.texto.tag_ranges("negrita"))
@@ -494,7 +494,7 @@ class TestVentana(TemporalMixin, unittest.TestCase):
             self.assertEqual(self.app.pegar(), "break")
         texto = self.app.texto.get("1.0", "end-1c")
         self.assertRegex(texto, r"Texto antes\n!\[imagen [^\]]+\]\(<_adjuntos/imagen [^>]+\.png>\)\n")
-        self.assertEqual(len(list(ap.ADJUNTOS.glob("*.png"))), 1)
+        self.assertEqual(len(list(datos.ADJUNTOS.glob("*.png"))), 1)
         self.app.resaltar()
         t = self.app.texto
         self.assertEqual(len(t.dump("1.0", "end", image=True)), 1)   # vista previa
@@ -502,7 +502,7 @@ class TestVentana(TemporalMixin, unittest.TestCase):
         ini, fin = t.tag_ranges("oculto")
         self.assertRegex(t.get(ini, fin), r"^!\[imagen [^\]]+\]\(<_adjuntos/[^>]+>\)$")
         self.app.guardar()
-        guardado = (ap.NOTAS / "Con imagen.md").read_text(encoding="utf-8")
+        guardado = (datos.NOTAS / "Con imagen.md").read_text(encoding="utf-8")
         self.assertNotIn("pyimage", guardado)
         self.assertIn("](<_adjuntos/imagen ", guardado)   # el enlace sí se guarda
         # Retroceso justo detrás de la imagen la borra entera (imagen + enlace)
@@ -535,8 +535,8 @@ class TestVentana(TemporalMixin, unittest.TestCase):
                          "Markdown (.md)", "Texto sin formato (.txt)", "OpenDocument (.odt)"):
             self.assertIn(esperado, textos)
         v.destroy()
-        (ap.BASE / "fuera").mkdir()
-        destino = self.app.exportar("nota", "docx", ap.BASE / "fuera" / "x.docx")
+        (datos.BASE / "fuera").mkdir()
+        destino = self.app.exportar("nota", "docx", datos.BASE / "fuera" / "x.docx")
         self.assertTrue(destino.is_file())
         hechas = self.app.importar_archivos([destino])
         self.assertEqual(len(hechas), 1)
@@ -545,8 +545,8 @@ class TestVentana(TemporalMixin, unittest.TestCase):
 
     def test_teclas_de_tabla(self):
         cuerpo = "| Nombre | Nota |\n| --- | --- |\n| Ana | 9 |"
-        ruta = ap.NOTAS / "Tabla.md"
-        ap.escribir_nota(ruta, "Tabla", [], "2026-11-09 10:00", cuerpo)
+        ruta = datos.NOTAS / "Tabla.md"
+        datos.escribir_nota(ruta, "Tabla", [], "2026-11-09 10:00", cuerpo)
         self.app.cargar(ruta)
         t = self.app.texto
         t.mark_set("insert", "1.4")
@@ -569,8 +569,8 @@ class TestVentana(TemporalMixin, unittest.TestCase):
 
     def test_resaltar_tablas(self):
         cuerpo = "| **Nombre** |\n| --- |\n| ~~Ana~~ |\n```\n| código |\n```"
-        ruta = ap.NOTAS / "Tabla.md"
-        ap.escribir_nota(ruta, "Tabla", [], "2026-11-09 10:00", cuerpo)
+        ruta = datos.NOTAS / "Tabla.md"
+        datos.escribir_nota(ruta, "Tabla", [], "2026-11-09 10:00", cuerpo)
         self.app.cargar(ruta)
         t = self.app.texto
         self.app.cfg["alinear_tablas"] = False
@@ -586,8 +586,8 @@ class TestVentana(TemporalMixin, unittest.TestCase):
     def test_insertar_tabla_se_deshace_en_un_paso(self):
         from unittest import mock
         cuerpo = "Antes\nDespués"
-        ruta = ap.NOTAS / "Texto.md"
-        ap.escribir_nota(ruta, "Texto", [], "2026-11-09 10:00", cuerpo)
+        ruta = datos.NOTAS / "Texto.md"
+        datos.escribir_nota(ruta, "Texto", [], "2026-11-09 10:00", cuerpo)
         self.app.cargar(ruta)
         t = self.app.texto
         t.mark_set("insert", "1.2")
@@ -646,8 +646,8 @@ class TestVentana(TemporalMixin, unittest.TestCase):
         self.app.alternar_tema()
 
     def test_mayusculas_auto(self):
-        ruta = ap.NOTAS / "Mayúsculas.md"
-        ap.escribir_nota(ruta, "Mayúsculas", [], "2026-11-09 10:00", "Hola. Mundo")
+        ruta = datos.NOTAS / "Mayúsculas.md"
+        datos.escribir_nota(ruta, "Mayúsculas", [], "2026-11-09 10:00", "Hola. Mundo")
         self.app.cargar(ruta)
         t = self.app.texto
         t.mark_set("insert", "1.6")
@@ -667,8 +667,8 @@ class TestVentana(TemporalMixin, unittest.TestCase):
         self.assertEqual(t.get("1.0", "end-1c"), antes)
 
     def test_cierre_automatico(self):
-        ruta = ap.NOTAS / "Pares.md"
-        ap.escribir_nota(ruta, "Pares", [], "2026-11-09 10:00", "")
+        ruta = datos.NOTAS / "Pares.md"
+        datos.escribir_nota(ruta, "Pares", [], "2026-11-09 10:00", "")
         self.app.cargar(ruta)
         t = self.app.texto
         abrir = SimpleNamespace(char="(")
@@ -704,8 +704,8 @@ class TestVentana(TemporalMixin, unittest.TestCase):
     def test_espacio_corrige_tilde_antes_de_puntuacion(self):
         from tests.test_ortografia import Falso
 
-        ruta = ap.NOTAS / "Tildes.md"
-        ap.escribir_nota(ruta, "Tildes", [], "2026-11-09 10:00", "aqui.")
+        ruta = datos.NOTAS / "Tildes.md"
+        datos.escribir_nota(ruta, "Tildes", [], "2026-11-09 10:00", "aqui.")
         self.app.cargar(ruta)
         self.app._corr = Falso()
         t = self.app.texto
@@ -715,8 +715,8 @@ class TestVentana(TemporalMixin, unittest.TestCase):
         self.assertEqual(t.index("insert"), "1.5")
 
     def test_tachado(self):
-        ruta = ap.NOTAS / "Atajos.md"
-        ap.escribir_nota(ruta, "Atajos", [], "2026-11-09 10:00", "texto")
+        ruta = datos.NOTAS / "Atajos.md"
+        datos.escribir_nota(ruta, "Atajos", [], "2026-11-09 10:00", "texto")
         self.app.cargar(ruta)
         t = self.app.texto
         t.tag_add("sel", "1.0", "1.end")
@@ -822,7 +822,7 @@ class TestAdministrador(unittest.TestCase):
     def test_carpeta_de_datos_por_argumento(self):
         from unittest import mock
         with mock.patch.object(ap.sys, "argv", ["x", r"--datos=C:\Mis apuntes"]):
-            self.assertEqual(ap.carpeta_datos(), Path(r"C:\Mis apuntes"))
+            self.assertEqual(datos.carpeta_datos(), Path(r"C:\Mis apuntes"))
 
 
 if __name__ == "__main__":
